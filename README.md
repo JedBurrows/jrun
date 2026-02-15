@@ -5,7 +5,7 @@ IntelliJ IDEA on WSL has issues:
 2. Processes stay alive after closing the IDE
 3. Ports stay bound, blocking subsequent runs
 
-This tool handles process lifecycle correctly with proper signal handling.
+This tool is a personal project for work that is used to run java projects on wsl.
 
 ## Installation
 
