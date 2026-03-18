@@ -1,0 +1,37 @@
+{
+  "name": "jrun",
+  "version": "0.1.0",
+  "description": "CLI for running Java projects with process management",
+  "type": "module",
+  "bin": {
+    "jrun": "./bin/jrun"
+  },
+  "files": ["bin", "dist"],
+  "scripts": {
+    "build": "tsup",
+    "dev": "tsx src/main.ts",
+    "test": "vitest",
+    "test:run": "vitest run",
+    "prepublishOnly": "pnpm build"
+  },
+  "dependencies": {
+    "effect": "^3.20.0",
+    "@effect/cli": "^0.73.2",
+    "@effect/platform": "^0.94.5",
+    "@effect/platform-node": "^0.104.1"
+  },
+  "devDependencies": {
+    "@effect/vitest": "latest",
+    "vitest": "^2.0.0",
+    "typescript": "^5.7.0",
+    "tsx": "latest",
+    "tsup": "latest"
+  },
+  "pnpm": {
+    "onlyBuiltDependencies": [
+      "esbuild",
+      "@parcel/watcher",
+      "msgpackr-extract"
+    ]
+  }
+}
