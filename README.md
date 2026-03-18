@@ -9,30 +9,29 @@ This tool is a personal project for work that is used to run java projects on ws
 
 ## Prerequisites
 
-- Node.js >= 22
-- pnpm
 - Java (for running projects)
 - Maven (for building projects and resolving classpath)
 
 ## Installation
 
+**Standalone binary** (no Node.js required):
+
 ```bash
-git clone <repo-url> ~/jrun
-cd ~/jrun
-pnpm install
-pnpm build
+curl -fsSL https://raw.githubusercontent.com/jedburrows/jrun/main/install.sh | bash
 ```
 
-To make `jrun` available globally:
+Or download the binary directly from [GitHub Releases](https://github.com/jedburrows/jrun/releases).
+
+**Uninstall:**
 
 ```bash
-pnpm link --global
+curl -fsSL https://raw.githubusercontent.com/jedburrows/jrun/main/install.sh | bash -s -- --uninstall
 ```
 
-Or add the bin directory to your PATH:
+**From source** (requires Node.js >= 22 and pnpm):
 
 ```bash
-export PATH="$HOME/jrun/bin:$PATH"
+npm i -g github:jedburrows/jrun
 ```
 
 ## Usage

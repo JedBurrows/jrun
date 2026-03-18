@@ -9,6 +9,7 @@
   "files": ["bin", "dist"],
   "scripts": {
     "build": "tsup",
+    "build:sea": "esbuild src/main.ts --bundle --platform=node --target=node22 --format=cjs --outfile=dist/main.cjs",
     "dev": "tsx src/main.ts",
     "test": "vitest",
     "test:run": "vitest run",
@@ -25,7 +26,8 @@
     "vitest": "^2.0.0",
     "typescript": "^5.7.0",
     "tsx": "latest",
-    "tsup": "latest"
+    "tsup": "latest",
+    "postject": "^1.0.0-alpha.6"
   },
   "pnpm": {
     "onlyBuiltDependencies": [
