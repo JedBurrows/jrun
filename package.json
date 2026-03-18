@@ -6,7 +6,10 @@
   "bin": {
     "jrun": "./bin/jrun"
   },
-  "files": ["bin", "dist"],
+  "files": [
+    "bin",
+    "dist"
+  ],
   "scripts": {
     "build": "tsup",
     "build:sea": "esbuild src/main.ts --bundle --platform=node --target=node22 --format=cjs --outfile=dist/main.cjs",
@@ -16,18 +19,19 @@
     "prepublishOnly": "pnpm build"
   },
   "dependencies": {
-    "effect": "^3.20.0",
     "@effect/cli": "^0.73.2",
     "@effect/platform": "^0.94.5",
-    "@effect/platform-node": "^0.104.1"
+    "@effect/platform-node": "^0.104.1",
+    "effect": "^3.20.0"
   },
   "devDependencies": {
     "@effect/vitest": "latest",
-    "vitest": "^2.0.0",
-    "typescript": "^5.7.0",
-    "tsx": "latest",
+    "esbuild": "^0.27.4",
+    "postject": "^1.0.0-alpha.6",
     "tsup": "latest",
-    "postject": "^1.0.0-alpha.6"
+    "tsx": "latest",
+    "typescript": "^5.7.0",
+    "vitest": "^2.0.0"
   },
   "pnpm": {
     "onlyBuiltDependencies": [
