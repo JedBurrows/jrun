@@ -106,6 +106,16 @@ public class Main {
     )
   )
 
+  it.effect("finds main classes across modules in a multi-module project", () =>
+    testWithFiles(
+      {
+        "module-a/src/main/java/com/example/ServiceA.java": `public class ServiceA { public static void main(String[] args) {} }`,
+        "module-b/src/main/java/com/example/ServiceB.java": `public class ServiceB { public static void main(String[] args) {} }`,
+      },
+      (classes) => expect(classes).toEqual(["com.example.ServiceA", "com.example.ServiceB"])
+    )
+  )
+
   it.effect("returns empty array when no main classes exist", () =>
     testWithFiles(
       {

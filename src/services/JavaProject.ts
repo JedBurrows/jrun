@@ -48,19 +48,39 @@ export const JavaProjectLive = Layer.effect(
         return results
       })
 
+    const findSrcMainJavaDirs = (dir: string): Effect.Effect<string[], PlatformError> =>
+      Effect.gen(function* () {
+        const srcMainJava = path.join(dir, "src", "main", "java")
+        const results: string[] = []
+        if (yield* fs.exists(srcMainJava)) {
+          results.push(srcMainJava)
+        }
+        const entries = yield* fs.readDirectory(dir)
+        for (const entry of entries) {
+          if (entry === "src" || entry === "target" || entry.startsWith(".")) continue
+          const full = path.join(dir, entry)
+          const stat = yield* fs.stat(full)
+          if (stat.type === "Directory") {
+            const nested = yield* findSrcMainJavaDirs(full)
+            results.push(...nested)
+          }
+        }
+        return results
+      })
+
     const findMainClasses = Effect.gen(function* () {
-      const srcDir = path.join(root, "src", "main", "java")
-      const exists = yield* fs.exists(srcDir)
-      if (!exists) return []
+      const srcDirs = yield* findSrcMainJavaDirs(root)
+      if (srcDirs.length === 0) return []
 
-      const javaFiles = yield* walkJavaFiles(srcDir)
       const mainClasses: string[] = []
-
-      for (const file of javaFiles) {
-        const content = yield* fs.readFileString(file)
-        if (MAIN_METHOD_RE.test(content)) {
-          const relative = path.relative(srcDir, file)
-          mainClasses.push(fileToFqcn(relative))
+      for (const srcDir of srcDirs) {
+        const javaFiles = yield* walkJavaFiles(srcDir)
+        for (const file of javaFiles) {
+          const content = yield* fs.readFileString(file)
+          if (MAIN_METHOD_RE.test(content)) {
+            const relative = path.relative(srcDir, file)
+            mainClasses.push(fileToFqcn(relative))
+          }
         }
       }
 

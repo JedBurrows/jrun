@@ -8,7 +8,7 @@ export const list = Command.make("list", {}, () =>
     const classes = yield* project.findMainClasses
 
     if (classes.length === 0) {
-      yield* Console.log("No main classes found in src/main/java")
+      yield* Console.log("No main classes found")
     } else {
       yield* Console.log("Available main classes:")
       for (const cls of classes) {
