@@ -22,6 +22,7 @@ export interface ConfigStore {
   readonly load: (
     name: string
   ) => Effect.Effect<RunConfig, ConfigNotFound | PlatformError>
+  readonly list: Effect.Effect<string[], PlatformError>
   readonly saveLastRun: (config: RunConfig) => Effect.Effect<void, PlatformError>
   readonly loadLastRun: Effect.Effect<RunConfig, NoLastRun | PlatformError>
 }
@@ -59,6 +60,16 @@ export const ConfigStoreLive = Layer.effect(
         return JSON.parse(content) as RunConfig
       })
 
+    const list = Effect.gen(function* () {
+      const exists = yield* fs.exists(configsDir)
+      if (!exists) return []
+      const entries = yield* fs.readDirectory(configsDir)
+      return entries
+        .filter((e) => e.endsWith(".json"))
+        .map((e) => e.slice(0, -5))
+        .sort()
+    })
+
     const saveLastRun = (config: RunConfig) =>
       fs.writeFileString(lastRunPath, JSON.stringify(config, null, 2))
 
@@ -69,6 +80,6 @@ export const ConfigStoreLive = Layer.effect(
       return JSON.parse(content) as RunConfig
     })
 
-    return { save, load, saveLastRun, loadLastRun } as const
+    return { save, load, list, saveLastRun, loadLastRun } as const
   })
 )

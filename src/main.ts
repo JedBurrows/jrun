@@ -9,15 +9,17 @@ import { save } from "./commands/save.js"
 import { rerun } from "./commands/rerun.js"
 import { status } from "./commands/status.js"
 import { kill } from "./commands/kill.js"
+import { configs } from "./commands/configs.js"
 
 import { JavaProjectLive, ProjectRoot } from "./services/JavaProject.js"
 import { ConfigStoreLive, ConfigDir } from "./services/ConfigStore.js"
 import { ProcessManagerLive, PidDir } from "./services/ProcessManager.js"
+import { TerminalLive } from "./services/Terminal.js"
 import * as path from "node:path"
 import * as os from "node:os"
 
 const jrun = Command.make("jrun").pipe(
-  Command.withSubcommands([build, list, start, save, rerun, status, kill])
+  Command.withSubcommands([build, list, start, save, rerun, status, kill, configs])
 )
 
 const cwd = process.cwd()
@@ -47,7 +49,8 @@ const ProcessManagerLayer = ProcessManagerLive.pipe(
 const AppLayer = Layer.mergeAll(
   JavaProjectLayer,
   ConfigStoreLayer,
-  ProcessManagerLayer
+  ProcessManagerLayer,
+  TerminalLive
 )
 
 const cli = Command.run(jrun, { name: "jrun", version: "0.1.0" })

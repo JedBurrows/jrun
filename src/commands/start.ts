@@ -3,6 +3,7 @@ import { Effect, Console, Option } from "effect"
 import { JavaProjectService } from "../services/JavaProject.js"
 import { ProcessManagerService } from "../services/ProcessManager.js"
 import { ConfigStoreService } from "../services/ConfigStore.js"
+import { TerminalService } from "../services/Terminal.js"
 
 const jvmOption = Options.text("jvm").pipe(
   Options.optional,
@@ -25,6 +26,7 @@ export const start = Command.make(
       const project = yield* JavaProjectService
       const pm = yield* ProcessManagerService
       const configStore = yield* ConfigStoreService
+      const terminal = yield* TerminalService
 
       const jvmOpts = Option.isSome(jvm)
         ? jvm.value.split(/\s+/).filter((s) => s.length > 0)
@@ -61,13 +63,12 @@ export const start = Command.make(
         if (classes.length === 1) {
           mainClass = classes[0]!
         } else {
-          yield* Console.log("Available main classes:")
-          for (let i = 0; i < classes.length; i++) {
-            yield* Console.log(`  ${i + 1}) ${classes[i]}`)
-          }
-          // For now, default to first class (interactive selection needs Terminal service)
-          mainClass = classes[0]!
-          yield* Console.log(`Auto-selecting: ${mainClass}`)
+          const selected = yield* terminal.select({
+            message: "Select a main class",
+            choices: classes.map((c) => ({ value: c, label: c })),
+          }).pipe(Effect.catchTag("UserCancelled", () => Effect.succeed(null)))
+          if (selected === null) return
+          mainClass = selected
         }
       }
 

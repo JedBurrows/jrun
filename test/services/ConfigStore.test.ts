@@ -114,6 +114,38 @@ describe("ConfigStore", () => {
     )
   )
 
+  it.effect("list returns empty array when no configs saved", () =>
+    makeTest((store) =>
+      Effect.gen(function* () {
+        const names = yield* store.list
+        expect(names).toEqual([])
+      })
+    )
+  )
+
+  it.effect("list returns sorted config names", () =>
+    makeTest((store) =>
+      Effect.gen(function* () {
+        yield* store.save("zebra", testConfig)
+        yield* store.save("alpha", testConfig)
+        yield* store.save("middle", testConfig)
+        const names = yield* store.list
+        expect(names).toEqual(["alpha", "middle", "zebra"])
+      })
+    )
+  )
+
+  it.effect("list does not include last-run", () =>
+    makeTest((store) =>
+      Effect.gen(function* () {
+        yield* store.saveLastRun(testConfig)
+        yield* store.save("myapp", testConfig)
+        const names = yield* store.list
+        expect(names).toEqual(["myapp"])
+      })
+    )
+  )
+
   it.effect("handles args with spaces and special characters", () =>
     makeTest((store) =>
       Effect.gen(function* () {

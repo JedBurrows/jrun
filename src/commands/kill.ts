@@ -1,6 +1,7 @@
 import { Command, Args } from "@effect/cli"
 import { Effect, Console, Option } from "effect"
 import { ProcessManagerService, ProcessNotFound } from "../services/ProcessManager.js"
+import { TerminalService } from "../services/Terminal.js"
 
 const classArg = Args.text({ name: "class" }).pipe(Args.optional)
 
@@ -10,6 +11,7 @@ export const kill = Command.make(
   ({ class_: classOpt }) =>
     Effect.gen(function* () {
       const pm = yield* ProcessManagerService
+      const terminal = yield* TerminalService
 
       if (Option.isSome(classOpt)) {
         yield* Console.log(`Stopping ${classOpt.value}...`)
@@ -32,13 +34,17 @@ export const kill = Command.make(
           yield* pm.kill(proc.mainClass)
           yield* Console.log("Stopped.")
         } else {
-          yield* Console.log("Running processes:")
-          for (let i = 0; i < running.length; i++) {
-            yield* Console.log(
-              `  ${i + 1}) ${running[i]!.mainClass} (PID ${running[i]!.pid})`
-            )
-          }
-          yield* Console.log("Specify a class name to kill: jrun kill <class>")
+          const selected = yield* terminal.select({
+            message: "Which process to kill?",
+            choices: running.map((p) => ({
+              value: p.mainClass,
+              label: `${p.mainClass} (PID ${p.pid})`,
+            })),
+          }).pipe(Effect.catchTag("UserCancelled", () => Effect.succeed(null)))
+          if (selected === null) return
+          yield* Console.log(`Stopping ${selected}...`)
+          yield* pm.kill(selected)
+          yield* Console.log("Stopped.")
         }
       }
     })
