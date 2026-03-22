@@ -73,6 +73,35 @@ jrun status
 jrun kill com.example.App
 ```
 
+## Try it out
+
+The repo includes a demo Maven project in `example/`. Run these commands from that directory:
+
+```bash
+cd example
+mvn compile
+
+# See all discoverable main classes
+jrun list
+
+# Quick run — exits immediately
+jrun start com.example.HelloWorld
+jrun start com.example.HelloWorld Alice
+
+# Run with flags
+jrun start com.example.DataProcessor -- --count 5 --label order
+
+# Long-running server (runs until killed)
+jrun start com.example.ApiServer -- --port 9000 &
+jrun status
+jrun kill com.example.ApiServer
+
+# Save a config and rerun it
+jrun save hello com.example.HelloWorld World
+jrun start hello
+jrun rerun
+```
+
 ## Development
 
 ```bash
