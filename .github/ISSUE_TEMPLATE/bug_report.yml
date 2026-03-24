@@ -1,0 +1,33 @@
+name: Bug Report
+description: Something isn't working as expected
+labels: [bug]
+body:
+  - type: textarea
+    id: description
+    attributes:
+      label: Description
+      description: What happened? What did you expect?
+    validations:
+      required: true
+
+  - type: textarea
+    id: steps
+    attributes:
+      label: Steps to Reproduce
+      placeholder: |
+        1. Run `jrun start com.example.Main`
+        2. ...
+    validations:
+      required: true
+
+  - type: textarea
+    id: environment
+    attributes:
+      label: Environment
+      placeholder: |
+        - jrun version: 0.2.0
+        - OS: Ubuntu 24.04 / macOS 15 / WSL2
+        - Java version: 21
+        - Node version: 22
+    validations:
+      required: true

@@ -1,13 +1,13 @@
-import { describe, expect } from "vitest"
-import { it } from "@effect/vitest"
-import { Effect, Layer } from "effect"
-import { FileSystem } from "@effect/platform"
-import { NodeContext } from "@effect/platform-node"
+import { FileSystem } from "@effect/platform";
+import { NodeContext } from "@effect/platform-node";
+import { it } from "@effect/vitest";
+import { Effect, Layer } from "effect";
+import { describe, expect } from "vitest";
 import {
-  JavaProjectService,
   JavaProjectLive,
+  JavaProjectService,
   ProjectRoot,
-} from "../../src/services/JavaProject.js"
+} from "../../src/services/JavaProject.js";
 
 const writeJavaFile = (
   fs: FileSystem.FileSystem,
@@ -16,34 +16,31 @@ const writeJavaFile = (
   content: string
 ) =>
   Effect.gen(function* () {
-    const parts = relativePath.split("/")
-    const dir = parts.slice(0, -1).join("/")
-    yield* fs.makeDirectory(`${root}/${dir}`, { recursive: true })
-    yield* fs.writeFileString(`${root}/${relativePath}`, content)
-  })
+    const parts = relativePath.split("/");
+    const dir = parts.slice(0, -1).join("/");
+    yield* fs.makeDirectory(`${root}/${dir}`, { recursive: true });
+    yield* fs.writeFileString(`${root}/${relativePath}`, content);
+  });
 
-const testWithFiles = (
-  files: Record<string, string>,
-  assertion: (classes: string[]) => void
-) =>
+const testWithFiles = (files: Record<string, string>, assertion: (classes: string[]) => void) =>
   Effect.gen(function* () {
-    const fs = yield* FileSystem.FileSystem
-    const tmpDir = yield* fs.makeTempDirectory()
+    const fs = yield* FileSystem.FileSystem;
+    const tmpDir = yield* fs.makeTempDirectory();
 
     for (const [path, content] of Object.entries(files)) {
-      yield* writeJavaFile(fs, tmpDir, path, content)
+      yield* writeJavaFile(fs, tmpDir, path, content);
     }
 
     const layer = JavaProjectLive.pipe(
       Layer.provide(Layer.succeed(ProjectRoot, tmpDir)),
       Layer.provide(NodeContext.layer)
-    )
+    );
     const classes = yield* JavaProjectService.pipe(
       Effect.flatMap((p) => p.findMainClasses),
       Effect.provide(layer)
-    )
-    assertion(classes)
-  }).pipe(Effect.provide(NodeContext.layer))
+    );
+    assertion(classes);
+  }).pipe(Effect.provide(NodeContext.layer));
 
 describe("JavaProject.findMainClasses", () => {
   it.effect("finds standard main method", () =>
@@ -58,7 +55,7 @@ public class App {
       },
       (classes) => expect(classes).toContain("com.example.App")
     )
-  )
+  );
 
   it.effect("finds varargs main method", () =>
     testWithFiles(
@@ -70,7 +67,7 @@ public class VarApp {
       },
       (classes) => expect(classes).toContain("com.example.VarApp")
     )
-  )
+  );
 
   it.effect("finds main with extra whitespace", () =>
     testWithFiles(
@@ -82,7 +79,7 @@ public class Spacey {
       },
       (classes) => expect(classes).toContain("com.example.Spacey")
     )
-  )
+  );
 
   it.effect("converts file path to FQCN correctly", () =>
     testWithFiles(
@@ -94,7 +91,7 @@ public class Main {
       },
       (classes) => expect(classes).toContain("org.foo.bar.Main")
     )
-  )
+  );
 
   it.effect("finds multiple main classes across packages", () =>
     testWithFiles(
@@ -104,7 +101,7 @@ public class Main {
       },
       (classes) => expect(classes).toEqual(["com.a.One", "com.b.Two"])
     )
-  )
+  );
 
   it.effect("finds main classes across modules in a multi-module project", () =>
     testWithFiles(
@@ -114,7 +111,7 @@ public class Main {
       },
       (classes) => expect(classes).toEqual(["com.example.ServiceA", "com.example.ServiceB"])
     )
-  )
+  );
 
   it.effect("returns empty array when no main classes exist", () =>
     testWithFiles(
@@ -126,24 +123,24 @@ public class Util {
       },
       (classes) => expect(classes).toEqual([])
     )
-  )
+  );
 
   it.effect("returns empty when src/main/java doesn't exist", () =>
     Effect.gen(function* () {
-      const fs = yield* FileSystem.FileSystem
-      const tmpDir = yield* fs.makeTempDirectory()
+      const fs = yield* FileSystem.FileSystem;
+      const tmpDir = yield* fs.makeTempDirectory();
 
       const layer = JavaProjectLive.pipe(
         Layer.provide(Layer.succeed(ProjectRoot, tmpDir)),
         Layer.provide(NodeContext.layer)
-      )
+      );
       const classes = yield* JavaProjectService.pipe(
         Effect.flatMap((p) => p.findMainClasses),
         Effect.provide(layer)
-      )
-      expect(classes).toEqual([])
+      );
+      expect(classes).toEqual([]);
     }).pipe(Effect.provide(NodeContext.layer))
-  )
+  );
 
   it.effect("ignores files without main method", () =>
     testWithFiles(
@@ -153,5 +150,5 @@ public class Util {
       },
       (classes) => expect(classes).toEqual(["com.example.HasMain"])
     )
-  )
-})
+  );
+});

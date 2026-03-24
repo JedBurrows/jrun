@@ -13,6 +13,8 @@ jobs:
     runs-on: ubuntu-latest
     steps:
       - uses: actions/checkout@v4
+        with:
+          fetch-depth: 0
 
       - uses: pnpm/action-setup@v4
         with:
@@ -28,8 +30,15 @@ jobs:
       - name: Build binary
         run: bash scripts/build-binary.sh
 
+      - name: Generate release notes
+        id: git-cliff
+        uses: orhun/git-cliff-action@v4
+        with:
+          config: cliff.toml
+          args: --latest --strip header
+
       - name: Create release
         uses: softprops/action-gh-release@v2
         with:
           files: dist/jrun
-          generate_release_notes: true
+          body: ${{ steps.git-cliff.outputs.content }}

@@ -1,4 +1,4 @@
-import { defineConfig } from "tsup"
+import { defineConfig } from "tsup";
 
 export default defineConfig({
   entry: ["src/main.ts"],
@@ -6,4 +6,4 @@ export default defineConfig({
   target: "node22",
   clean: true,
   sourcemap: true,
-})
+});
