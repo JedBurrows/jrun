@@ -75,6 +75,9 @@ export const ProcessManagerLive = Layer.effect(
         ]
 
         const proc = yield* Command.make("java", ...args).pipe(
+          Command.stdout("inherit"),
+          Command.stderr("inherit"),
+          Command.stdin("inherit"),
           Command.start
         )
 
