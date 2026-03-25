@@ -9,7 +9,7 @@
   "files": ["bin", "dist"],
   "scripts": {
     "build": "tsup",
-    "build:sea": "esbuild src/main.ts --bundle --platform=node --target=node22 --format=cjs --outfile=dist/main.cjs",
+    "build:sea": "esbuild src/main.ts --bundle --platform=node --target=node22 --format=esm --alias:react-devtools-core=./scripts/stubs/react-devtools-core.mjs --outfile=dist/main.mjs",
     "dev": "tsx src/main.ts",
     "test": "vitest",
     "test:run": "vitest run",

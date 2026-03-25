@@ -1,6 +1,6 @@
 {
-  "main": "dist/main.cjs",
+  "main": "dist/main.mjs",
   "output": "dist/sea-prep.blob",
   "disableExperimentalSEAWarning": true,
-  "useCodeCache": true
+  "useCodeCache": false
 }

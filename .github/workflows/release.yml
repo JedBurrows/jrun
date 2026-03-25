@@ -27,9 +27,6 @@ jobs:
 
       - run: pnpm install --frozen-lockfile
 
-      - name: Build binary
-        run: bash scripts/build-binary.sh
-
       - name: Generate release notes
         id: git-cliff
         uses: orhun/git-cliff-action@v4
@@ -40,5 +37,4 @@ jobs:
       - name: Create release
         uses: softprops/action-gh-release@v2
         with:
-          files: dist/jrun
           body: ${{ steps.git-cliff.outputs.content }}
