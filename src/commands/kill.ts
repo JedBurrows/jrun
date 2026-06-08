@@ -54,9 +54,7 @@ export const kill = Command.make(
 
       if (json) {
         if (running.length === 0) {
-          yield* Console.log(
-            JSON.stringify({ ok: false, error: "no tracked processes running" })
-          );
+          yield* Console.log(JSON.stringify({ ok: false, error: "no tracked processes running" }));
           yield* Effect.sync(() => {
             process.exitCode = 1;
           });
@@ -68,9 +66,7 @@ export const kill = Command.make(
           yield* Console.log(JSON.stringify({ ok: true, mainClass: proc.mainClass }));
           return;
         }
-        yield* Console.log(
-          JSON.stringify({ ok: false, error: "ambiguous: specify a class" })
-        );
+        yield* Console.log(JSON.stringify({ ok: false, error: "ambiguous: specify a class" }));
         yield* Effect.sync(() => {
           process.exitCode = 1;
         });

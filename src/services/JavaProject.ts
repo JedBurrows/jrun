@@ -50,9 +50,7 @@ export const JavaProjectLive = Layer.effect(
         Effect.catchAll((e: PlatformError) => {
           // A missing `rg` binary surfaces as SystemError/NotFound — fail loudly.
           if (e._tag === "SystemError" && e.reason === "NotFound") {
-            return Effect.die(
-              new Error("ripgrep (rg) is required but not found in PATH")
-            );
+            return Effect.die(new Error("ripgrep (rg) is required but not found in PATH"));
           }
           // rg exiting 1 (no matches) does NOT fail Command.string — it returns
           // "" successfully — so this branch only sees real failures
@@ -62,9 +60,7 @@ export const JavaProjectLive = Layer.effect(
       );
 
       const paths = stdout.trim().split("\n").filter(Boolean);
-      const classes = paths
-        .map(extractFqcn)
-        .filter((c): c is string => c !== undefined);
+      const classes = paths.map(extractFqcn).filter((c): c is string => c !== undefined);
 
       // rg --files-with-matches emits each path once, so no dedup needed.
       return classes.sort();

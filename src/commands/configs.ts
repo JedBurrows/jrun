@@ -101,48 +101,51 @@ const configsEdit = Command.make("edit", { name: nameArg }, ({ name }) =>
 ).pipe(Command.withDescription("Edit a configuration in $EDITOR"));
 
 // jrun configs delete <name>
-const configsDelete = Command.make("delete", { name: nameArg, json: jsonOption }, ({ name, json }) =>
-  Effect.gen(function* () {
-    const store = yield* ConfigStoreService;
-    const terminal = yield* TerminalService;
+const configsDelete = Command.make(
+  "delete",
+  { name: nameArg, json: jsonOption },
+  ({ name, json }) =>
+    Effect.gen(function* () {
+      const store = yield* ConfigStoreService;
+      const terminal = yield* TerminalService;
 
-    const exists = yield* store.load(name).pipe(Effect.option);
-    if (exists._tag === "None") {
-      if (json) {
-        yield* Console.log(JSON.stringify({ ok: false, error: `No config found: ${name}` }));
+      const exists = yield* store.load(name).pipe(Effect.option);
+      if (exists._tag === "None") {
+        if (json) {
+          yield* Console.log(JSON.stringify({ ok: false, error: `No config found: ${name}` }));
+          yield* Effect.sync(() => {
+            process.exitCode = 1;
+          });
+          return;
+        }
+        yield* Console.error(`No config found: ${name}`);
         yield* Effect.sync(() => {
           process.exitCode = 1;
         });
         return;
       }
-      yield* Console.error(`No config found: ${name}`);
-      yield* Effect.sync(() => {
-        process.exitCode = 1;
-      });
-      return;
-    }
 
-    if (!json) {
-      const confirmed = yield* terminal
-        .confirm({
-          message: `Delete config "${name}"?`,
-          initialValue: false,
-        })
-        .pipe(Effect.catchTag("UserCancelled", () => Effect.succeed(false)));
+      if (!json) {
+        const confirmed = yield* terminal
+          .confirm({
+            message: `Delete config "${name}"?`,
+            initialValue: false,
+          })
+          .pipe(Effect.catchTag("UserCancelled", () => Effect.succeed(false)));
 
-      if (!confirmed) return;
-    }
+        if (!confirmed) return;
+      }
 
-    const configPath = path.join(os.homedir(), ".jrun", "configs", `${name}.json`);
-    const fs = yield* FileSystem.FileSystem;
-    yield* fs.remove(configPath);
+      const configPath = path.join(os.homedir(), ".jrun", "configs", `${name}.json`);
+      const fs = yield* FileSystem.FileSystem;
+      yield* fs.remove(configPath);
 
-    if (json) {
-      yield* Console.log(JSON.stringify({ ok: true, name }));
-    } else {
-      yield* Console.log(`Deleted ${name}`);
-    }
-  })
+      if (json) {
+        yield* Console.log(JSON.stringify({ ok: true, name }));
+      } else {
+        yield* Console.log(`Deleted ${name}`);
+      }
+    })
 ).pipe(Command.withDescription("Delete a saved configuration"));
 
 // jrun configs (no subcommand) — launches the ink TUI

@@ -10,14 +10,14 @@ import {
   ProjectRoot,
 } from "../../src/services/JavaProject.js";
 import {
-  buildJavaArgs,
-  debugJvmArg,
   JavaBin,
   LogDir,
   PidDir,
   ProcessManagerLive,
   ProcessManagerService,
   ProcessNotFound,
+  buildJavaArgs,
+  debugJvmArg,
 } from "../../src/services/ProcessManager.js";
 
 const makeTestLayer = (tmpDir: string, pidDir: string) => {
