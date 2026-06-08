@@ -151,4 +151,23 @@ public class Util {
       (classes) => expect(classes).toEqual(["com.example.HasMain"])
     )
   );
+
+  it.effect("finds main classes in src/test/java", () =>
+    testWithFiles(
+      {
+        "src/test/java/com/example/TestRunner.java": `public class TestRunner { public static void main(String[] args) {} }`,
+      },
+      (classes) => expect(classes).toContain("com.example.TestRunner")
+    )
+  );
+
+  it.effect("skips java files outside standard src/scope/java layout", () =>
+    testWithFiles(
+      {
+        "scripts/DoSomething.java": `public class DoSomething { public static void main(String[] args) {} }`,
+        "src/main/java/com/example/App.java": `public class App { public static void main(String[] args) {} }`,
+      },
+      (classes) => expect(classes).toEqual(["com.example.App"])
+    )
+  );
 });
