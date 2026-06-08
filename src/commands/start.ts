@@ -84,7 +84,19 @@ export const start = Command.make(
           } else {
             yield* Console.log(`Running ${record.mainClass}...`);
           }
-        });
+        }).pipe(
+          Effect.catchAll((e) =>
+            Effect.gen(function* () {
+              const msg = (e as { message?: string }).message ?? String(e);
+              if (json) {
+                yield* Console.log(JSON.stringify({ ok: false, error: msg }));
+              } else {
+                yield* Console.error(msg);
+              }
+              process.exitCode = 1;
+            })
+          )
+        );
 
       let mainClass: string;
 
