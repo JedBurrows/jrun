@@ -1,4 +1,6 @@
+import * as childProcess from "node:child_process";
 import * as crypto from "node:crypto";
+import * as nodeFs from "node:fs";
 import { Command, CommandExecutor, FileSystem, Path } from "@effect/platform";
 import type { PlatformError } from "@effect/platform/Error";
 import { Context, Data, Effect, Layer, Option } from "effect";
@@ -31,7 +33,10 @@ export interface RunOptions {
 export type RunningProcess = ProcessRecord;
 
 export interface ProcessManager {
-  readonly run: (config: RunConfig) => Effect.Effect<void, JavaProcessError | PlatformError>;
+  readonly run: (
+    config: RunConfig,
+    options?: RunOptions
+  ) => Effect.Effect<ProcessRecord, JavaProcessError | PlatformError>;
   readonly listRunning: Effect.Effect<ProcessRecord[], PlatformError>;
   readonly kill: (className: string) => Effect.Effect<void, ProcessNotFound | PlatformError>;
   readonly killByPid: (pid: number) => Effect.Effect<void, PlatformError>;
@@ -43,6 +48,26 @@ export class ProcessManagerService extends Context.Tag("ProcessManager")<
 >() {}
 
 export class PidDir extends Context.Tag("PidDir")<PidDir, string>() {}
+
+export class LogDir extends Context.Tag("LogDir")<LogDir, string>() {}
+
+export class JavaBin extends Context.Tag("JavaBin")<JavaBin, string>() {}
+
+export const buildJavaArgs = (
+  config: RunConfig,
+  classpath: string,
+  debug: { port: number; suspend: boolean } | null
+): string[] => {
+  const debugArgs = debug ? [debugJvmArg(debug.port, debug.suspend)] : [];
+  return [
+    ...debugArgs,
+    ...config.jvmOpts,
+    "-cp",
+    classpath,
+    config.mainClass,
+    ...config.programArgs,
+  ];
+};
 
 const projectHash = (root: string) => crypto.createHash("md5").update(root).digest("hex");
 
@@ -113,28 +138,84 @@ export const ProcessManagerLive = Layer.effect(
     const root = yield* ProjectRoot;
     const project = yield* JavaProjectService;
     const executor = yield* CommandExecutor.CommandExecutor;
+    const logDir = yield* LogDir;
 
     yield* fs.makeDirectory(pidDir, { recursive: true });
+    yield* fs.makeDirectory(logDir, { recursive: true });
+
+    const javaBin = yield* Effect.serviceOption(JavaBin).pipe(
+      Effect.map((o) => (o._tag === "Some" ? o.value : "java"))
+    );
 
     const hash = projectHash(root);
 
     const pidFile = (mainClass: string) => pathSvc.join(pidDir, `${hash}-${mainClass}.pid`);
 
-    const run = (config: RunConfig) =>
+    const writeRecord = (record: ProcessRecord) =>
+      Effect.gen(function* () {
+        const target = pidFile(record.mainClass);
+        const tmp = `${target}.${record.pid}.tmp`;
+        yield* fs.writeFileString(tmp, JSON.stringify(record));
+        yield* fs.rename(tmp, target);
+      });
+
+    const run = (config: RunConfig, options: RunOptions = {}) =>
       Effect.gen(function* () {
         const classpath = yield* project.resolveClasspath;
+        const debug = options.debug ?? null;
+        const args = buildJavaArgs(config, classpath, debug);
+        const startedAt = new Date().toISOString();
 
-        const args = [...config.jvmOpts, "-cp", classpath, config.mainClass, ...config.programArgs];
+        if (options.detached) {
+          const logFile = pathSvc.join(
+            logDir,
+            `${hash}-${config.mainClass}-${startedAt.replace(/[:.]/g, "-")}.log`
+          );
+          const record: ProcessRecord = yield* Effect.try({
+            try: () => {
+              const fd = nodeFs.openSync(logFile, "a");
+              const child = childProcess.spawn(javaBin, args, {
+                detached: true,
+                stdio: ["ignore", fd, fd],
+                cwd: root,
+              });
+              nodeFs.closeSync(fd);
+              child.unref();
+              if (child.pid === undefined) {
+                throw new Error("failed to spawn detached process (no pid)");
+              }
+              return {
+                pid: child.pid,
+                mainClass: config.mainClass,
+                startedAt,
+                logFile,
+                args: [...config.programArgs],
+                debugPort: debug ? debug.port : null,
+              };
+            },
+            catch: (e) =>
+              new JavaProcessError({ message: `Failed to start detached: ${String(e)}` }),
+          });
+          yield* writeRecord(record);
+          return record;
+        }
 
-        const proc = yield* Command.make("java", ...args).pipe(
+        // Foreground path
+        const proc = yield* Command.make(javaBin, ...args).pipe(
           Command.stdout("inherit"),
           Command.stderr("inherit"),
           Command.stdin("inherit"),
           Command.start
         );
-
-        const pid = proc.pid;
-        yield* fs.writeFileString(pidFile(config.mainClass), String(pid));
+        const record: ProcessRecord = {
+          pid: proc.pid,
+          mainClass: config.mainClass,
+          startedAt,
+          logFile: null,
+          args: [...config.programArgs],
+          debugPort: debug ? debug.port : null,
+        };
+        yield* writeRecord(record);
 
         yield* proc.exitCode.pipe(
           Effect.ensuring(fs.remove(pidFile(config.mainClass)).pipe(Effect.ignore)),
@@ -148,6 +229,8 @@ export const ProcessManagerLive = Layer.effect(
                 )
           )
         );
+
+        return record;
       }).pipe(Effect.scoped, Effect.provideService(CommandExecutor.CommandExecutor, executor));
 
     const listRunning = Effect.gen(function* () {

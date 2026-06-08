@@ -10,7 +10,10 @@ import {
   ProjectRoot,
 } from "../../src/services/JavaProject.js";
 import {
+  buildJavaArgs,
   debugJvmArg,
+  JavaBin,
+  LogDir,
   PidDir,
   ProcessManagerLive,
   ProcessManagerService,
@@ -29,6 +32,7 @@ const makeTestLayer = (tmpDir: string, pidDir: string) => {
     Layer.provide(javaProjectLayer),
     Layer.provide(rootLayer),
     Layer.provide(pidLayer),
+    Layer.provide(Layer.succeed(LogDir, pidDir)),
     Layer.provide(NodeContext.layer)
   );
 };
@@ -190,6 +194,59 @@ describe("ProcessManager", () => {
     }).pipe(Effect.provide(NodeContext.layer))
   );
 
+  it.effect("detached run writes a record with a log file and redirects output", () =>
+    Effect.gen(function* () {
+      const fs = yield* FileSystem.FileSystem;
+      const tmpDir = yield* fs.makeTempDirectory();
+      const pidDir = yield* fs.makeTempDirectory();
+      const logDir = yield* fs.makeTempDirectory();
+
+      const fakeJava = `${tmpDir}/fake-java`;
+      yield* fs.writeFileString(fakeJava, `#!/bin/bash\necho "HELLO_FROM_FAKE_JAVA"\nsleep 2\n`);
+      yield* Effect.sync(() => require("node:fs").chmodSync(fakeJava, 0o755));
+
+      const rootLayer = Layer.succeed(ProjectRoot, tmpDir);
+      const pidLayer = Layer.succeed(PidDir, pidDir);
+      const logLayer = Layer.succeed(LogDir, logDir);
+      const javaBinLayer = Layer.succeed(JavaBin, fakeJava);
+      const javaProjectLayer = JavaProjectLive.pipe(
+        Layer.provide(rootLayer),
+        Layer.provide(NodeContext.layer)
+      );
+      const layer = ProcessManagerLive.pipe(
+        Layer.provide(javaProjectLayer),
+        Layer.provide(rootLayer),
+        Layer.provide(pidLayer),
+        Layer.provide(logLayer),
+        Layer.provide(javaBinLayer),
+        Layer.provide(NodeContext.layer)
+      );
+
+      const record = yield* ProcessManagerService.pipe(
+        Effect.flatMap((pm) =>
+          pm.run(
+            { mainClass: "com.example.App", programArgs: [], jvmOpts: [] },
+            { detached: true, debug: null }
+          )
+        ),
+        Effect.provide(layer)
+      );
+
+      expect(record.mainClass).toBe("com.example.App");
+      expect(record.logFile).not.toBe(null);
+      expect(record.debugPort).toBe(null);
+
+      yield* Effect.sleep("300 millis");
+      const log = yield* fs.readFileString(record.logFile!);
+      expect(log).toContain("HELLO_FROM_FAKE_JAVA");
+
+      yield* ProcessManagerService.pipe(
+        Effect.flatMap((pm) => pm.killByPid(record.pid)),
+        Effect.provide(layer)
+      );
+    }).pipe(Effect.provide(NodeContext.layer))
+  );
+
   it.effect("kill returns ProcessNotFound for unknown class", () =>
     Effect.gen(function* () {
       const fs = yield* FileSystem.FileSystem;
@@ -209,6 +266,32 @@ describe("ProcessManager", () => {
       expect(result).toBeInstanceOf(ProcessNotFound);
     }).pipe(Effect.provide(NodeContext.layer))
   );
+});
+
+test("buildJavaArgs injects debug arg before user jvm opts and orders cp/main/args", () => {
+  const args = buildJavaArgs(
+    { mainClass: "com.example.App", programArgs: ["--port", "8080"], jvmOpts: ["-Xmx512m"] },
+    "target/classes:dep.jar",
+    { port: 5005, suspend: false }
+  );
+  expect(args).toEqual([
+    "-agentlib:jdwp=transport=dt_socket,server=y,suspend=n,address=*:5005",
+    "-Xmx512m",
+    "-cp",
+    "target/classes:dep.jar",
+    "com.example.App",
+    "--port",
+    "8080",
+  ]);
+});
+
+test("buildJavaArgs omits debug arg when debug is null", () => {
+  const args = buildJavaArgs(
+    { mainClass: "com.example.App", programArgs: [], jvmOpts: [] },
+    "cp",
+    null
+  );
+  expect(args).toEqual(["-cp", "cp", "com.example.App"]);
 });
 
 test("debugJvmArg builds a non-suspending JDWP arg by default", () => {
