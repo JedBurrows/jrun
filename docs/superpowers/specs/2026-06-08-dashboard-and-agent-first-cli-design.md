@@ -106,16 +106,44 @@ Conventions:
 
 ### The dashboard TUI
 
-A single Ink app launched by `jrun` (no args) or `jrun ui`. Three tabs switched with Tab / ←→,
-plus a shared status/help bar.
+A single Ink app launched by `jrun` (no args) or `jrun ui`. **The UX is modeled on
+[lazygit](https://github.com/jesseduffield/lazygit):** panel-based, vim-first navigation, with a
+context-sensitive keybinding hint bar at the bottom and a `?` help overlay.
 
-- **Configs tab** — list + detail pane (current `ConfigsTui` content). Actions: `s` start
-  (detached), `e` edit (`$EDITOR`), `d` delete (with confirm).
-- **Running tab** — list of `listRunning()` records (mainClass, PID, uptime). Actions: `k` kill
-  (with confirm), `l` view logs (opens the log file in a pager or prints tail).
-- **Main classes tab** — `listMainClasses()` output. Actions: `s` start (detached), `S`
-  save-as-config (prompts for a name).
-- Global: `r` refresh (re-pulls all state via `JrunApi`), `q`/Esc quit. **No interval polling.**
+**Layout (lazygit-style).** A left column of stacked panels and a main detail pane on the right.
+The three panels are **Configs**, **Running**, and **Main classes**. The focused panel is
+highlighted; its selected row drives the right-hand detail pane.
+
+**Navigation — vim motions and arrow keys both work everywhere:**
+
+| Intent | Vim | Also |
+|---|---|---|
+| Move selection down / up | `j` / `k` | ↓ / ↑ |
+| Next / previous panel | `l` / `h` or `Tab` / `Shift-Tab` | → / ← |
+| Jump to panel 1/2/3 | `1` `2` `3` | — |
+| Top / bottom of list | `g` / `G` | Home / End |
+| Confirm / activate | `Enter` | — |
+| Cancel / back | `Esc` | — |
+| Help overlay | `?` | — |
+| Quit | `q` | `Ctrl-C` |
+
+**Per-panel actions** (single-key, shown contextually in the hint bar like lazygit):
+
+- **Configs** — `s` start (detached), `e` edit (`$EDITOR`), `d` delete (confirm).
+- **Running** — `k` kill (confirm), `l`… (note: `l` is "next panel"; logs use `Enter` to open
+  the log view, or a dedicated key — see Ambiguity resolution below).
+- **Main classes** — `s` start (detached), `w` save-as-config (prompts for a name).
+
+**Keybinding conventions (from lazygit):**
+- Lower-case = act on the selected item; the hint bar always shows the keys valid in the focused
+  panel.
+- Destructive actions (`d` delete, `k` kill) require a confirm prompt.
+- `r` refresh (re-pulls all state via `JrunApi`); **no interval polling.**
+
+**Ambiguity resolution — `l`/logs collision.** Because `l` is reserved for "next panel"
+(vim `h`/`l` movement), viewing logs in the Running panel is bound to `Enter` (open log view for
+the selected process) rather than `l`. The save-as-config action in Main classes uses `w`
+(write) to avoid colliding with `s` start. These bindings are listed in the `?` overlay.
 
 **Parity map** (each TUI action → CLI command):
 
@@ -161,8 +189,10 @@ plus a shared status/help bar.
     enriched records and reaps dead PIDs; foreground record has `logFile: null`.
   - `ConfigStore`: unchanged coverage.
 - **`JrunApi`** — thin contract test that each method delegates to the right service effect.
-- **TUI** — extract pure reducer/format functions and unit-test them; render-level smoke tests
-  with `ink-testing-library` for tab switching and key handling. React glue stays minimal.
+- **TUI** — extract pure reducer/format functions and unit-test them, including the keymap:
+  vim motions (`j`/`k`/`h`/`l`/`g`/`G`) and arrow keys resolve to the same actions, panel
+  focus cycling, and contextual action dispatch. Render-level smoke tests with
+  `ink-testing-library` for panel switching and key handling. React glue stays minimal.
 - Each build phase lands with a green suite and `pnpm typecheck` clean.
 
 ## Build Order
@@ -171,7 +201,8 @@ plus a shared status/help bar.
    (`docs/superpowers/plans/2026-05-19-fast-main-class-discovery.md`).
 2. **Detached runs + enriched PID records + `--json`** — `ProcessManager` + CLI flags + `logs`.
 3. **`JrunApi` seam** — introduce the adapter; route commands/TUI through it.
-4. **Dashboard TUI** — three-tab unified dashboard; remove raw I/O from React.
+4. **Dashboard TUI** — lazygit-style three-panel dashboard with vim + arrow navigation; remove
+   raw I/O from React.
 5. **Polish** — parity-map verification checklist, README/CLAUDE.md updates.
 
 Each phase is independently shippable and green before the next begins.
