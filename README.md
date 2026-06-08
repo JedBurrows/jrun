@@ -11,6 +11,7 @@ This tool is a personal project for work that is used to run java projects on ws
 
 - Java (for running projects)
 - Maven (for building projects and resolving classpath)
+- [ripgrep](https://github.com/BurntSushi/ripgrep) (`rg` must be on your `PATH`) — used by `jrun list` to discover main classes across all source roots
 
 ## Installation
 
@@ -46,11 +47,14 @@ jrun <command> [options]
 |---|---|
 | `build` | Compile (`mvn compile -q`) |
 | `list` | List all main classes in project |
-| `start [--jvm <opts>] [class] [args...]` | Run main class (or saved config) |
+| `start [--jvm <opts>] [--detached] [--debug <port>] [--debug-suspend] [class] [args...]` | Run main class (or saved config) |
+| `logs <class> [--follow]` | Print (or stream) a detached run's log file |
 | `save [--jvm <opts>] <name> <class> [args...]` | Save run configuration |
 | `rerun` | Run last command again |
 | `status` | Show tracked running processes |
 | `kill [class]` | Gracefully stop a process |
+
+Most commands also accept `--json` for machine-readable output (see [Agent / scripting use](#agent--scripting-use)).
 
 **Examples:**
 
@@ -60,6 +64,15 @@ jrun list
 
 # Run a class with JVM options
 jrun start --jvm "-Xmx512m -Dfoo=bar" com.example.App --port 8080
+
+# Run in the background; output is redirected to a log file under ~/.jrun/logs
+jrun start --detached com.example.App
+jrun logs com.example.App            # print the log
+jrun logs com.example.App --follow   # stream it
+
+# Run with remote debugging enabled (jrun enables JDWP; attach your IDE to the port)
+jrun start --debug 5005 com.example.App
+jrun start --debug 5005 --debug-suspend com.example.App   # JVM waits for the debugger
 
 # Save and reuse a configuration
 jrun save app com.example.App --port 8080
@@ -72,6 +85,33 @@ jrun rerun
 jrun status
 jrun kill com.example.App
 ```
+
+## Agent / scripting use
+
+Every query command (`list`, `status`, `configs list`, `configs show`) and action
+command (`start`, `kill`, `save`, `configs delete`) accepts `--json` for
+machine-readable output. Query commands print compact JSON; action commands print
+`{"ok":true,...}` on success or `{"ok":false,"error":...}` and exit non-zero on
+failure — so scripts and agents can branch on the exit code.
+
+```bash
+# JSON array of fully-qualified main classes
+jrun list --json
+
+# Launch in the background with debugging, get the pid/log/port back
+jrun start com.example.App --detached --debug 5005 --json
+# => {"ok":true,"pid":12345,"logFile":"/home/you/.jrun/logs/...","debugPort":5005}
+
+# Array of running-process records ({ pid, mainClass, startedAt, logFile, args, debugPort, detached })
+jrun status --json
+
+# Read a detached run's log (use --follow to stream)
+jrun logs com.example.App
+```
+
+**Debugging:** `--debug <port>` enables JDWP at launch — jrun *enables* debugging,
+you attach your IDE/debugger to that port. Add `--debug-suspend` to make the JVM
+wait for a debugger to attach before running.
 
 ## Try it out
 

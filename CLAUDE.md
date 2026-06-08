@@ -9,14 +9,17 @@ npm i -g github:jedburrows/jrun
 ## Quick reference
 
 Run `jrun --help` for all commands. Key commands:
-- `jrun list` — find main classes in a Maven project
-- `jrun start <class>` — run a main class (tracks the PID)
+- `jrun list` — find main classes in a Maven project (uses `rg`)
+- `jrun start <class>` — run a main class (tracks the PID). Flags: `--detached`/`-d` (background, logs to `~/.jrun/logs`), `--debug <port>` (enable JDWP; attach your IDE), `--debug-suspend`, `--json`
 - `jrun start <saved-name>` — run a saved configuration
+- `jrun logs <class> [--follow]` — print/stream a detached run's log
 - `jrun status` / `jrun kill` — manage running processes
 - `jrun save <name> <class> [args]` — save a run config
 - `jrun rerun` — repeat last run
 
-Must be run from a Maven project directory (where pom.xml lives).
+All query/action commands support `--json` for machine-readable output (the agent-facing contract).
+
+Must be run from a Maven project directory (where pom.xml lives). Requires `ripgrep` (`rg`) on PATH for `jrun list`.
 
 ## Development
 
