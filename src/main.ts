@@ -6,6 +6,7 @@ import { build } from "./commands/build.js";
 import { configs } from "./commands/configs.js";
 import { kill } from "./commands/kill.js";
 import { list } from "./commands/list.js";
+import { logs } from "./commands/logs.js";
 import { rerun } from "./commands/rerun.js";
 import { save } from "./commands/save.js";
 import { start } from "./commands/start.js";
@@ -19,7 +20,7 @@ import { LogDir, PidDir, ProcessManagerLive } from "./services/ProcessManager.js
 import { TerminalLive } from "./services/Terminal.js";
 
 const jrun = Command.make("jrun").pipe(
-  Command.withSubcommands([build, list, start, save, rerun, status, kill, configs])
+  Command.withSubcommands([build, list, start, save, rerun, status, kill, configs, logs])
 );
 
 const cwd = process.cwd();
