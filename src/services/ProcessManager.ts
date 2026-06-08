@@ -1,7 +1,7 @@
 import * as crypto from "node:crypto";
 import { Command, CommandExecutor, FileSystem, Path } from "@effect/platform";
 import type { PlatformError } from "@effect/platform/Error";
-import { Context, Data, Effect, Layer } from "effect";
+import { Context, Data, Effect, Layer, Option } from "effect";
 import type { RunConfig } from "./ConfigStore.js";
 import { JavaProjectService, ProjectRoot } from "./JavaProject.js";
 
@@ -13,14 +13,26 @@ export class ProcessNotFound extends Data.TaggedError("ProcessNotFound")<{
   readonly className: string;
 }> {}
 
-export interface RunningProcess {
-  readonly mainClass: string;
+export interface ProcessRecord {
   readonly pid: number;
+  readonly mainClass: string;
+  readonly startedAt: string;
+  readonly logFile: string | null;
+  readonly args: readonly string[];
+  readonly debugPort: number | null;
 }
+
+export interface RunOptions {
+  readonly detached?: boolean;
+  readonly debug?: { readonly port: number; readonly suspend: boolean } | null;
+}
+
+/** @deprecated use ProcessRecord */
+export type RunningProcess = ProcessRecord;
 
 export interface ProcessManager {
   readonly run: (config: RunConfig) => Effect.Effect<void, JavaProcessError | PlatformError>;
-  readonly listRunning: Effect.Effect<RunningProcess[], PlatformError>;
+  readonly listRunning: Effect.Effect<ProcessRecord[], PlatformError>;
   readonly kill: (className: string) => Effect.Effect<void, ProcessNotFound | PlatformError>;
   readonly killByPid: (pid: number) => Effect.Effect<void, PlatformError>;
 }
@@ -45,6 +57,40 @@ const isProcessRunning = (pid: number): boolean => {
 
 export const debugJvmArg = (port: number, suspend: boolean): string =>
   `-agentlib:jdwp=transport=dt_socket,server=y,suspend=${suspend ? "y" : "n"},address=*:${port}`;
+
+const parseRecord = (
+  content: string,
+  mainClassFromName: string,
+  mtimeIso: string
+): ProcessRecord | undefined => {
+  const trimmed = content.trim();
+  if (trimmed.length === 0) return undefined;
+  // Legacy format: a bare integer PID
+  if (/^\d+$/.test(trimmed)) {
+    return {
+      pid: Number.parseInt(trimmed, 10),
+      mainClass: mainClassFromName,
+      startedAt: mtimeIso,
+      logFile: null,
+      args: [],
+      debugPort: null,
+    };
+  }
+  try {
+    const obj = JSON.parse(trimmed) as Partial<ProcessRecord>;
+    if (typeof obj.pid !== "number") return undefined;
+    return {
+      pid: obj.pid,
+      mainClass: obj.mainClass ?? mainClassFromName,
+      startedAt: obj.startedAt ?? mtimeIso,
+      logFile: obj.logFile ?? null,
+      args: obj.args ?? [],
+      debugPort: obj.debugPort ?? null,
+    };
+  } catch {
+    return undefined;
+  }
+};
 
 export const ProcessManagerLive = Layer.effect(
   ProcessManagerService,
@@ -97,17 +143,22 @@ export const ProcessManagerLive = Layer.effect(
       if (!exists) return [];
 
       const entries = yield* fs.readDirectory(pidDir);
-      const running: RunningProcess[] = [];
+      const running: ProcessRecord[] = [];
 
       for (const entry of entries) {
         if (!entry.startsWith(hash) || !entry.endsWith(".pid")) continue;
         const filePath = pathSvc.join(pidDir, entry);
         const content = yield* fs.readFileString(filePath);
-        const pid = Number.parseInt(content.trim(), 10);
+        const mainClassFromName = entry.slice(hash.length + 1, -4);
+        const stat = yield* fs.stat(filePath);
+        const mtimeIso = Option.match(stat.mtime, {
+          onNone: () => "",
+          onSome: (d) => d.toISOString(),
+        });
 
-        if (isProcessRunning(pid)) {
-          const mainClass = entry.slice(hash.length + 1, -4); // remove hash- prefix and .pid suffix
-          running.push({ mainClass, pid });
+        const record = parseRecord(content, mainClassFromName, mtimeIso);
+        if (record && isProcessRunning(record.pid)) {
+          running.push(record);
         } else {
           yield* fs.remove(filePath).pipe(Effect.ignore);
         }

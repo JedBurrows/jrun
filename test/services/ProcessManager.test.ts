@@ -96,9 +96,19 @@ describe("ProcessManager", () => {
       const crypto = require("node:crypto");
       const hash = crypto.createHash("md5").update(tmpDir).digest("hex");
 
-      // Use current process PID (which is running)
       const myPid = process.pid;
-      yield* fs.writeFileString(`${pidDir}/${hash}-com.example.Running.pid`, String(myPid));
+      const record = {
+        pid: myPid,
+        mainClass: "com.example.Running",
+        startedAt: "2026-06-08T00:00:00.000Z",
+        logFile: null,
+        args: [],
+        debugPort: null,
+      };
+      yield* fs.writeFileString(
+        `${pidDir}/${hash}-com.example.Running.pid`,
+        JSON.stringify(record)
+      );
 
       const layer = makeTestLayer(tmpDir, pidDir);
       const running = yield* ProcessManagerService.pipe(
@@ -106,7 +116,7 @@ describe("ProcessManager", () => {
         Effect.provide(layer)
       );
 
-      expect(running).toEqual([{ mainClass: "com.example.Running", pid: myPid }]);
+      expect(running).toEqual([record]);
     }).pipe(Effect.provide(NodeContext.layer))
   );
 
@@ -126,6 +136,33 @@ describe("ProcessManager", () => {
       );
 
       expect(running).toEqual([]);
+    }).pipe(Effect.provide(NodeContext.layer))
+  );
+
+  it.effect("listRunning parses legacy raw-integer PID files", () =>
+    Effect.gen(function* () {
+      const fs = yield* FileSystem.FileSystem;
+      const tmpDir = yield* fs.makeTempDirectory();
+      const pidDir = yield* fs.makeTempDirectory();
+      const crypto = require("node:crypto");
+      const hash = crypto.createHash("md5").update(tmpDir).digest("hex");
+
+      const myPid = process.pid;
+      yield* fs.writeFileString(`${pidDir}/${hash}-com.example.Legacy.pid`, String(myPid));
+
+      const layer = makeTestLayer(tmpDir, pidDir);
+      const running = yield* ProcessManagerService.pipe(
+        Effect.flatMap((pm) => pm.listRunning),
+        Effect.provide(layer)
+      );
+
+      expect(running.length).toBe(1);
+      expect(running[0]!.pid).toBe(myPid);
+      expect(running[0]!.mainClass).toBe("com.example.Legacy");
+      expect(running[0]!.logFile).toBe(null);
+      expect(running[0]!.debugPort).toBe(null);
+      expect(running[0]!.args).toEqual([]);
+      expect(typeof running[0]!.startedAt).toBe("string");
     }).pipe(Effect.provide(NodeContext.layer))
   );
 
