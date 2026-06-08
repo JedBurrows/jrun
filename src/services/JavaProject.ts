@@ -16,6 +16,9 @@ export class JavaProjectService extends Context.Tag("JavaProject")<
 >() {}
 
 const RG_MAIN_PATTERN = "public\\s+static\\s+void\\s+main\\s*\\(\\s*String";
+// Assumes POSIX (`/`) path separators. jrun is a Linux/WSL tool by design
+// (consistent with the `:` classpath separator and `/dev/stdout` in
+// resolveClasspath); native-Windows `\` paths are intentionally unsupported.
 const SOURCE_ROOT_RE = /src\/[^/]+\/java\/(.*\.java)$/;
 
 const extractFqcn = (filePath: string): string | undefined => {
@@ -45,13 +48,16 @@ export const JavaProjectLive = Layer.effect(
       ).pipe(
         Command.string,
         Effect.catchAll((e: PlatformError) => {
+          // A missing `rg` binary surfaces as SystemError/NotFound — fail loudly.
           if (e._tag === "SystemError" && e.reason === "NotFound") {
             return Effect.die(
               new Error("ripgrep (rg) is required but not found in PATH")
             );
           }
-          // rg exits 1 when no files match — not an error
-          return Effect.succeed("");
+          // rg exiting 1 (no matches) does NOT fail Command.string — it returns
+          // "" successfully — so this branch only sees real failures
+          // (permissions, stream errors). Re-propagate them.
+          return Effect.fail(e);
         })
       );
 
@@ -60,7 +66,8 @@ export const JavaProjectLive = Layer.effect(
         .map(extractFqcn)
         .filter((c): c is string => c !== undefined);
 
-      return [...new Set(classes)].sort();
+      // rg --files-with-matches emits each path once, so no dedup needed.
+      return classes.sort();
     }).pipe(Effect.provideService(CommandExecutor.CommandExecutor, executor));
 
     const resolveClasspath = Effect.gen(function* () {
