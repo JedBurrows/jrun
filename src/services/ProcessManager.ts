@@ -16,7 +16,7 @@ export class ProcessNotFound extends Data.TaggedError("ProcessNotFound")<{
 export interface ProcessRecord {
   readonly pid: number;
   readonly mainClass: string;
-  readonly startedAt: string;
+  readonly startedAt: string | null;
   readonly logFile: string | null;
   readonly args: readonly string[];
   readonly debugPort: number | null;
@@ -58,10 +58,22 @@ const isProcessRunning = (pid: number): boolean => {
 export const debugJvmArg = (port: number, suspend: boolean): string =>
   `-agentlib:jdwp=transport=dt_socket,server=y,suspend=${suspend ? "y" : "n"},address=*:${port}`;
 
+/**
+ * Parse a PID file's contents into a {@link ProcessRecord}.
+ *
+ * `pid` is the only required field. All other fields fall back to defaults
+ * derived from the file name (`mainClass`) or its mtime (`startedAt`), or to
+ * `null`/`[]` when absent. Each JSON field is type-checked so a corrupt or
+ * hand-edited file cannot inject wrong types.
+ *
+ * Returns `undefined` for empty content, invalid JSON, or a record without a
+ * numeric `pid`. Callers MUST NOT reap files that yield `undefined`: it may be a
+ * mid-flight partial write from a live, starting process.
+ */
 const parseRecord = (
   content: string,
   mainClassFromName: string,
-  mtimeIso: string
+  mtimeIso: string | null
 ): ProcessRecord | undefined => {
   const trimmed = content.trim();
   if (trimmed.length === 0) return undefined;
@@ -81,11 +93,11 @@ const parseRecord = (
     if (typeof obj.pid !== "number") return undefined;
     return {
       pid: obj.pid,
-      mainClass: obj.mainClass ?? mainClassFromName,
-      startedAt: obj.startedAt ?? mtimeIso,
-      logFile: obj.logFile ?? null,
-      args: obj.args ?? [],
-      debugPort: obj.debugPort ?? null,
+      mainClass: typeof obj.mainClass === "string" ? obj.mainClass : mainClassFromName,
+      startedAt: typeof obj.startedAt === "string" ? obj.startedAt : mtimeIso,
+      logFile: typeof obj.logFile === "string" ? obj.logFile : null,
+      args: Array.isArray(obj.args) ? obj.args : [],
+      debugPort: typeof obj.debugPort === "number" ? obj.debugPort : null,
     };
   } catch {
     return undefined;
@@ -152,12 +164,17 @@ export const ProcessManagerLive = Layer.effect(
         const mainClassFromName = entry.slice(hash.length + 1, -4);
         const stat = yield* fs.stat(filePath);
         const mtimeIso = Option.match(stat.mtime, {
-          onNone: () => "",
+          onNone: () => null,
           onSome: (d) => d.toISOString(),
         });
 
         const record = parseRecord(content, mainClassFromName, mtimeIso);
-        if (record && isProcessRunning(record.pid)) {
+        // Skip (do NOT reap) unparseable files: a truncated/partial write from a
+        // live, starting process self-heals on the next read. Removing it would
+        // orphan an untracked JVM. A genuinely corrupt file lingering is safer.
+        if (!record) continue;
+
+        if (isProcessRunning(record.pid)) {
           running.push(record);
         } else {
           yield* fs.remove(filePath).pipe(Effect.ignore);

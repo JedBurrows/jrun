@@ -166,6 +166,30 @@ describe("ProcessManager", () => {
     }).pipe(Effect.provide(NodeContext.layer))
   );
 
+  it.effect("listRunning does NOT remove malformed (unparseable) PID files", () =>
+    Effect.gen(function* () {
+      const fs = yield* FileSystem.FileSystem;
+      const tmpDir = yield* fs.makeTempDirectory();
+      const pidDir = yield* fs.makeTempDirectory();
+      const crypto = require("node:crypto");
+      const hash = crypto.createHash("md5").update(tmpDir).digest("hex");
+
+      const filePath = `${pidDir}/${hash}-com.example.Partial.pid`;
+      yield* fs.writeFileString(filePath, "{not valid json");
+
+      const layer = makeTestLayer(tmpDir, pidDir);
+      const running = yield* ProcessManagerService.pipe(
+        Effect.flatMap((pm) => pm.listRunning),
+        Effect.provide(layer)
+      );
+
+      expect(running).toEqual([]);
+      // Must NOT be reaped — could be a partial write from a live process.
+      const exists = yield* fs.exists(filePath);
+      expect(exists).toBe(true);
+    }).pipe(Effect.provide(NodeContext.layer))
+  );
+
   it.effect("kill returns ProcessNotFound for unknown class", () =>
     Effect.gen(function* () {
       const fs = yield* FileSystem.FileSystem;
