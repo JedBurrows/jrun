@@ -194,7 +194,10 @@ describe("ProcessManager", () => {
     }).pipe(Effect.provide(NodeContext.layer))
   );
 
-  it.effect("detached run writes a record with a log file and redirects output", () =>
+  // Uses it.live (real clock): the body relies on real-time Effect.sleep and on
+  // killByPid's real 2s SIGTERM->SIGKILL delay, which would hang under the
+  // TestClock that it.effect installs.
+  it.live("detached run writes a record with a log file and redirects output", () =>
     Effect.gen(function* () {
       const fs = yield* FileSystem.FileSystem;
       const tmpDir = yield* fs.makeTempDirectory();
@@ -209,12 +212,14 @@ describe("ProcessManager", () => {
       const pidLayer = Layer.succeed(PidDir, pidDir);
       const logLayer = Layer.succeed(LogDir, logDir);
       const javaBinLayer = Layer.succeed(JavaBin, fakeJava);
-      const javaProjectLayer = JavaProjectLive.pipe(
-        Layer.provide(rootLayer),
-        Layer.provide(NodeContext.layer)
-      );
+      // Stub JavaProject so this test does not shell out to `mvn`; the detached
+      // spawn behavior is what's under test, not classpath resolution.
+      const stubJavaProject = Layer.succeed(JavaProjectService, {
+        findMainClasses: Effect.succeed([] as string[]),
+        resolveClasspath: Effect.succeed("target/classes"),
+      });
       const layer = ProcessManagerLive.pipe(
-        Layer.provide(javaProjectLayer),
+        Layer.provide(stubJavaProject),
         Layer.provide(rootLayer),
         Layer.provide(pidLayer),
         Layer.provide(logLayer),
