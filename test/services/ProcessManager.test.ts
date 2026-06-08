@@ -108,6 +108,7 @@ describe("ProcessManager", () => {
         logFile: null,
         args: [],
         debugPort: null,
+        detached: false,
       };
       yield* fs.writeFileString(
         `${pidDir}/${hash}-com.example.Running.pid`,
@@ -166,6 +167,7 @@ describe("ProcessManager", () => {
       expect(running[0]!.logFile).toBe(null);
       expect(running[0]!.debugPort).toBe(null);
       expect(running[0]!.args).toEqual([]);
+      expect(running[0]!.detached).toBe(false);
       expect(typeof running[0]!.startedAt).toBe("string");
     }).pipe(Effect.provide(NodeContext.layer))
   );
@@ -240,6 +242,7 @@ describe("ProcessManager", () => {
       expect(record.mainClass).toBe("com.example.App");
       expect(record.logFile).not.toBe(null);
       expect(record.debugPort).toBe(null);
+      expect(record.detached).toBe(true);
 
       yield* Effect.sleep("300 millis");
       const log = yield* fs.readFileString(record.logFile!);
@@ -249,6 +252,89 @@ describe("ProcessManager", () => {
         Effect.flatMap((pm) => pm.killByPid(record.pid)),
         Effect.provide(layer)
       );
+    }).pipe(Effect.provide(NodeContext.layer))
+  );
+
+  // Round-trip: start a detached fake-java that sleeps, then kill it by class
+  // name. Exercises the real kill -> parseRecord -> signal path (the JSON
+  // pid-file format that previously broke Number.parseInt-based kill), and the
+  // process-group signalling for detached runs. Uses it.live (real clock).
+  it.live("kill(className) terminates a detached process and removes its pid file", () =>
+    Effect.gen(function* () {
+      const fs = yield* FileSystem.FileSystem;
+      const tmpDir = yield* fs.makeTempDirectory();
+      const pidDir = yield* fs.makeTempDirectory();
+      const logDir = yield* fs.makeTempDirectory();
+
+      const fakeJava = `${tmpDir}/fake-java`;
+      // Sleep long enough that the process is unambiguously alive until killed.
+      yield* fs.writeFileString(fakeJava, `#!/bin/bash\nsleep 30\n`);
+      yield* Effect.sync(() => require("node:fs").chmodSync(fakeJava, 0o755));
+
+      const rootLayer = Layer.succeed(ProjectRoot, tmpDir);
+      const pidLayer = Layer.succeed(PidDir, pidDir);
+      const logLayer = Layer.succeed(LogDir, logDir);
+      const javaBinLayer = Layer.succeed(JavaBin, fakeJava);
+      const stubJavaProject = Layer.succeed(JavaProjectService, {
+        findMainClasses: Effect.succeed([] as string[]),
+        resolveClasspath: Effect.succeed("target/classes"),
+      });
+      const layer = ProcessManagerLive.pipe(
+        Layer.provide(stubJavaProject),
+        Layer.provide(rootLayer),
+        Layer.provide(pidLayer),
+        Layer.provide(logLayer),
+        Layer.provide(javaBinLayer),
+        Layer.provide(NodeContext.layer)
+      );
+
+      const record = yield* ProcessManagerService.pipe(
+        Effect.flatMap((pm) =>
+          pm.run(
+            { mainClass: "com.example.Killable", programArgs: [], jvmOpts: [] },
+            { detached: true, debug: null }
+          )
+        ),
+        Effect.provide(layer)
+      );
+
+      // Confirm it is actually running before we kill it.
+      const aliveBefore = yield* Effect.sync(() => {
+        try {
+          process.kill(record.pid, 0);
+          return true;
+        } catch {
+          return false;
+        }
+      });
+      expect(aliveBefore).toBe(true);
+
+      // Kill by class name -> real parseRecord -> group signal.
+      yield* ProcessManagerService.pipe(
+        Effect.flatMap((pm) => pm.kill("com.example.Killable")),
+        Effect.provide(layer)
+      );
+
+      // Poll until the process is gone (kill is SIGTERM; give it a moment).
+      let aliveAfter = true;
+      for (let i = 0; i < 20 && aliveAfter; i++) {
+        aliveAfter = yield* Effect.sync(() => {
+          try {
+            process.kill(record.pid, 0);
+            return true;
+          } catch {
+            return false;
+          }
+        });
+        if (aliveAfter) yield* Effect.sleep("100 millis");
+      }
+      expect(aliveAfter).toBe(false);
+
+      // Pid file must be removed after a successful kill.
+      const pidFileExists = yield* fs.exists(
+        `${pidDir}/${require("node:crypto").createHash("md5").update(tmpDir).digest("hex")}-com.example.Killable.pid`
+      );
+      expect(pidFileExists).toBe(false);
     }).pipe(Effect.provide(NodeContext.layer))
   );
 

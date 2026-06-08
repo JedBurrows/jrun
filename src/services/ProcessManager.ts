@@ -22,6 +22,12 @@ export interface ProcessRecord {
   readonly logFile: string | null;
   readonly args: readonly string[];
   readonly debugPort: number | null;
+  /**
+   * Whether the process was spawned detached (its own process group). When
+   * true, {@link ProcessManager.kill} signals the whole group (`-pid`) so child
+   * processes holding ports are also terminated.
+   */
+  readonly detached: boolean;
 }
 
 export interface RunOptions {
@@ -39,7 +45,7 @@ export interface ProcessManager {
   ) => Effect.Effect<ProcessRecord, JavaProcessError | PlatformError>;
   readonly listRunning: Effect.Effect<ProcessRecord[], PlatformError>;
   readonly kill: (className: string) => Effect.Effect<void, ProcessNotFound | PlatformError>;
-  readonly killByPid: (pid: number) => Effect.Effect<void, PlatformError>;
+  readonly killByPid: (pid: number, group?: boolean) => Effect.Effect<void, PlatformError>;
 }
 
 export class ProcessManagerService extends Context.Tag("ProcessManager")<
@@ -111,6 +117,7 @@ const parseRecord = (
       logFile: null,
       args: [],
       debugPort: null,
+      detached: false,
     };
   }
   try {
@@ -123,6 +130,7 @@ const parseRecord = (
       logFile: typeof obj.logFile === "string" ? obj.logFile : null,
       args: Array.isArray(obj.args) ? obj.args : [],
       debugPort: typeof obj.debugPort === "number" ? obj.debugPort : null,
+      detached: typeof obj.detached === "boolean" ? obj.detached : false,
     };
   } catch {
     return undefined;
@@ -144,7 +152,7 @@ export const ProcessManagerLive = Layer.effect(
     yield* fs.makeDirectory(logDir, { recursive: true });
 
     const javaBin = yield* Effect.serviceOption(JavaBin).pipe(
-      Effect.map((o) => (o._tag === "Some" ? o.value : "java"))
+      Effect.map(Option.getOrElse(() => "java"))
     );
 
     const hash = projectHash(root);
@@ -159,6 +167,20 @@ export const ProcessManagerLive = Layer.effect(
         yield* fs.rename(tmp, target);
       });
 
+    /**
+     * Run a Java main class.
+     *
+     * DETACHED (`options.detached`): spawns the JVM in its own process group with
+     * output redirected to a log file, writes a {@link ProcessRecord}, and the
+     * returned Effect resolves IMMEDIATELY with that record.
+     *
+     * FOREGROUND (default): inherits stdio and BLOCKS — the returned Effect only
+     * resolves once the process exits, and fails with {@link JavaProcessError} on
+     * a non-zero exit code. The record is still written (and reaped on exit).
+     *
+     * Machine/agent callers should use detached (`--detached`) to get a record
+     * back promptly; `--json` output is intended for detached runs.
+     */
     const run = (config: RunConfig, options: RunOptions = {}) =>
       Effect.gen(function* () {
         const classpath = yield* project.resolveClasspath;
@@ -174,12 +196,19 @@ export const ProcessManagerLive = Layer.effect(
           const record: ProcessRecord = yield* Effect.try({
             try: () => {
               const fd = nodeFs.openSync(logFile, "a");
-              const child = childProcess.spawn(javaBin, args, {
-                detached: true,
-                stdio: ["ignore", fd, fd],
-                cwd: root,
-              });
-              nodeFs.closeSync(fd);
+              let child: childProcess.ChildProcess;
+              try {
+                child = childProcess.spawn(javaBin, args, {
+                  detached: true,
+                  stdio: ["ignore", fd, fd],
+                  cwd: root,
+                });
+              } finally {
+                // Close our copy of the fd regardless of spawn success: the
+                // child has inherited its own duplicate. Avoids an fd leak when
+                // spawn throws.
+                nodeFs.closeSync(fd);
+              }
               child.unref();
               if (child.pid === undefined) {
                 throw new Error("failed to spawn detached process (no pid)");
@@ -191,6 +220,7 @@ export const ProcessManagerLive = Layer.effect(
                 logFile,
                 args: [...config.programArgs],
                 debugPort: debug ? debug.port : null,
+                detached: true,
               };
             },
             catch: (e) =>
@@ -202,6 +232,7 @@ export const ProcessManagerLive = Layer.effect(
 
         // Foreground path
         const proc = yield* Command.make(javaBin, ...args).pipe(
+          Command.workingDirectory(root),
           Command.stdout("inherit"),
           Command.stderr("inherit"),
           Command.stdin("inherit"),
@@ -214,6 +245,7 @@ export const ProcessManagerLive = Layer.effect(
           logFile: null,
           args: [...config.programArgs],
           debugPort: debug ? debug.port : null,
+          detached: false,
         };
         yield* writeRecord(record);
 
@@ -267,23 +299,37 @@ export const ProcessManagerLive = Layer.effect(
       return running;
     });
 
-    const killByPid = (pid: number) =>
-      Effect.sync(() => {
-        try {
-          process.kill(pid, "SIGTERM");
-        } catch {
-          // already dead
+    /**
+     * Send `signal` to a process, optionally to its whole group.
+     *
+     * When `group` is true we target the process group (`-pid`) so detached
+     * children holding ports die too. If the group call fails with ESRCH (the
+     * leader already exited, e.g. the JVM forked nothing and is gone) we fall
+     * back to signalling the single pid. Any other error is swallowed (the
+     * process is presumed already dead).
+     */
+    const sendSignal = (pid: number, signal: NodeJS.Signals, group: boolean) => {
+      try {
+        process.kill(group ? -pid : pid, signal);
+      } catch (e) {
+        if (group && (e as NodeJS.ErrnoException).code === "ESRCH") {
+          try {
+            process.kill(pid, signal);
+          } catch {
+            // already dead
+          }
         }
-      }).pipe(
+        // otherwise already dead
+      }
+    };
+
+    const killByPid = (pid: number, group = false) =>
+      Effect.sync(() => sendSignal(pid, "SIGTERM", group)).pipe(
         Effect.andThen(Effect.sleep("2 seconds")),
         Effect.andThen(
           Effect.sync(() => {
             if (isProcessRunning(pid)) {
-              try {
-                process.kill(pid, "SIGKILL");
-              } catch {
-                // already dead
-              }
+              sendSignal(pid, "SIGKILL", group);
             }
           })
         )
@@ -296,8 +342,17 @@ export const ProcessManagerLive = Layer.effect(
         if (!exists) return yield* new ProcessNotFound({ className });
 
         const content = yield* fs.readFileString(pf);
-        const pid = Number.parseInt(content.trim(), 10);
-        yield* killByPid(pid);
+        const stat = yield* fs.stat(pf);
+        const mtimeIso = Option.match(stat.mtime, {
+          onNone: () => null,
+          onSome: (d) => d.toISOString(),
+        });
+        const record = parseRecord(content, className, mtimeIso);
+        // Unparseable (e.g. a mid-flight partial write): treat as not-found and
+        // do NOT remove the file — consistent with listRunning's skip rule.
+        if (!record) return yield* new ProcessNotFound({ className });
+
+        yield* killByPid(record.pid, record.detached);
         yield* fs.remove(pf).pipe(Effect.ignore);
       });
 
