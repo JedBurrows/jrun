@@ -51,6 +51,9 @@ const configsShow = Command.make("show", { name: nameArg, json: jsonOption }, ({
         return;
       }
       yield* Console.error(`No config found: ${name}`);
+      yield* Effect.sync(() => {
+        process.exitCode = 1;
+      });
       return;
     }
 
@@ -113,6 +116,9 @@ const configsDelete = Command.make("delete", { name: nameArg, json: jsonOption }
         return;
       }
       yield* Console.error(`No config found: ${name}`);
+      yield* Effect.sync(() => {
+        process.exitCode = 1;
+      });
       return;
     }
 

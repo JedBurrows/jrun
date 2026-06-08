@@ -37,7 +37,10 @@ export const kill = Command.make(
             return;
           }
           yield* Console.error(`No tracked process for ${target}`);
-          return yield* Effect.fail(new Error("process not found"));
+          yield* Effect.sync(() => {
+            process.exitCode = 1;
+          });
+          return;
         }
         if (json) {
           yield* Console.log(JSON.stringify({ ok: true, mainClass: target }));
