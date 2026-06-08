@@ -43,6 +43,9 @@ const isProcessRunning = (pid: number): boolean => {
   }
 };
 
+export const debugJvmArg = (port: number, suspend: boolean): string =>
+  `-agentlib:jdwp=transport=dt_socket,server=y,suspend=${suspend ? "y" : "n"},address=*:${port}`;
+
 export const ProcessManagerLive = Layer.effect(
   ProcessManagerService,
   Effect.gen(function* () {

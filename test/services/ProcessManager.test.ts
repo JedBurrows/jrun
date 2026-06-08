@@ -2,7 +2,7 @@ import { FileSystem } from "@effect/platform";
 import { NodeContext } from "@effect/platform-node";
 import { it } from "@effect/vitest";
 import { Effect, Layer } from "effect";
-import { describe, expect } from "vitest";
+import { describe, expect, test } from "vitest";
 import type { RunConfig } from "../../src/services/ConfigStore.js";
 import {
   JavaProjectLive,
@@ -10,6 +10,7 @@ import {
   ProjectRoot,
 } from "../../src/services/JavaProject.js";
 import {
+  debugJvmArg,
   PidDir,
   ProcessManagerLive,
   ProcessManagerService,
@@ -146,5 +147,17 @@ describe("ProcessManager", () => {
 
       expect(result).toBeInstanceOf(ProcessNotFound);
     }).pipe(Effect.provide(NodeContext.layer))
+  );
+});
+
+test("debugJvmArg builds a non-suspending JDWP arg by default", () => {
+  expect(debugJvmArg(5005, false)).toBe(
+    "-agentlib:jdwp=transport=dt_socket,server=y,suspend=n,address=*:5005"
+  );
+});
+
+test("debugJvmArg sets suspend=y when requested", () => {
+  expect(debugJvmArg(6000, true)).toBe(
+    "-agentlib:jdwp=transport=dt_socket,server=y,suspend=y,address=*:6000"
   );
 });
