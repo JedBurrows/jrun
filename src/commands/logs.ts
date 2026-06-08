@@ -44,6 +44,9 @@ export const logs = Command.make(
             stdio: "inherit",
           });
           child.on("exit", () => resume(Effect.void));
+          return Effect.sync(() => {
+            child.kill();
+          });
         });
         return;
       }

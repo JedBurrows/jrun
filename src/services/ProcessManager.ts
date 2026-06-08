@@ -35,9 +35,6 @@ export interface RunOptions {
   readonly debug?: { readonly port: number; readonly suspend: boolean } | null;
 }
 
-/** @deprecated use ProcessRecord */
-export type RunningProcess = ProcessRecord;
-
 export interface ProcessManager {
   readonly run: (
     config: RunConfig,

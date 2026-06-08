@@ -56,7 +56,7 @@ const AppLayer = Layer.mergeAll(
   TerminalLive
 );
 
-const cli = Command.run(jrun, { name: "jrun", version: "0.1.0" });
+const cli = Command.run(jrun, { name: "jrun", version: "0.3.0" });
 
 cli(process.argv).pipe(
   Effect.provide(AppLayer),
