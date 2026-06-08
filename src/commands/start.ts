@@ -43,15 +43,7 @@ export const start = Command.make(
     debugSuspend: debugSuspendOption,
     json: jsonOption,
   },
-  ({
-    jvm,
-    class_: classOpt,
-    args: pArgs,
-    detached,
-    debug: debugVal,
-    debugSuspend,
-    json,
-  }) =>
+  ({ jvm, class_: classOpt, args: pArgs, detached, debug: debugVal, debugSuspend, json }) =>
     Effect.gen(function* () {
       const project = yield* JavaProjectService;
       const pm = yield* ProcessManagerService;
@@ -85,9 +77,9 @@ export const start = Command.make(
             );
           } else if (detached) {
             yield* Console.log(
-              `Started ${record.mainClass} (PID ${record.pid})` +
-                (record.debugPort ? ` [debug:${record.debugPort}]` : "") +
-                (record.logFile ? `\nLogs: ${record.logFile}` : "")
+              `Started ${record.mainClass} (PID ${record.pid})${
+                record.debugPort ? ` [debug:${record.debugPort}]` : ""
+              }${record.logFile ? `\nLogs: ${record.logFile}` : ""}`
             );
           } else {
             yield* Console.log(`Running ${record.mainClass}...`);
@@ -114,7 +106,7 @@ export const start = Command.make(
         // Interactive selection
         const classes = yield* project.findMainClasses;
         if (classes.length === 0) {
-          yield* Console.error("No main classes found in src/main/java");
+          yield* Console.error("No main classes found");
           return;
         }
         if (classes.length === 1) {
