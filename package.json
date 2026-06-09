@@ -3,6 +3,7 @@
   "version": "0.3.0",
   "description": "CLI for running Java projects with process management",
   "type": "module",
+  "packageManager": "pnpm@10.32.1",
   "bin": {
     "jrun": "./bin/jrun"
   },
