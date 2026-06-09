@@ -1,3 +1,20 @@
+# jrun
+
+A CLI for running and managing Java processes from the terminal. Find main
+classes in a Maven project, run them (foreground or detached), enable remote
+debugging, save and rerun configurations, and reliably track and kill the
+processes you start — plus a lazygit-style interactive dashboard for humans.
+
+Built to solve IntelliJ/WSL process-management pain: processes that won't die,
+ports that stay bound, runs you can't cleanly reproduce.
+
+```bash
+mise use -g npm:@jed-dev/jrun   # or: npm i -g @jed-dev/jrun
+```
+
+> Requires Node.js >= 22, plus Java, Maven, and ripgrep on your `PATH`.
+> Run any command from a Maven project directory (where `pom.xml` lives).
+
 ## Why This Exists
 
 IntelliJ IDEA on WSL has issues:
