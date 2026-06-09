@@ -3,7 +3,6 @@ import * as nodefs from "node:fs/promises";
 import * as os from "node:os";
 import * as path from "node:path";
 import { Args, Command, Options } from "@effect/cli";
-import { FileSystem } from "@effect/platform";
 import { Console, Effect, Option } from "effect";
 import { render } from "ink";
 import React from "react";
@@ -136,9 +135,7 @@ const configsDelete = Command.make(
         if (!confirmed) return;
       }
 
-      const configPath = path.join(os.homedir(), ".jrun", "configs", `${name}.json`);
-      const fs = yield* FileSystem.FileSystem;
-      yield* fs.remove(configPath);
+      yield* store.delete(name);
 
       if (json) {
         yield* Console.log(JSON.stringify({ ok: true, name }));
