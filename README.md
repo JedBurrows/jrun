@@ -15,24 +15,30 @@ This tool is a personal project for work that is used to run java projects on ws
 
 ## Installation
 
-**Standalone binary** (no Node.js required):
+jrun is published to npm as `@jed-dev/jrun`. It needs Node.js >= 22 — if you
+don't have it, [mise](https://mise.jdx.dev) provides it (see below).
+
+**Via [mise](https://mise.jdx.dev)** (recommended — provides Node too):
 
 ```bash
-curl -fsSL https://raw.githubusercontent.com/jedburrows/jrun/main/install.sh | bash
+mise use -g npm:@jed-dev/jrun
 ```
 
-Or download the binary directly from [GitHub Releases](https://github.com/jedburrows/jrun/releases).
+Or pin it alongside its runtime dependencies in a shared `mise.toml`, so
+`mise install` provisions everything in one shot:
 
-**Uninstall:**
-
-```bash
-curl -fsSL https://raw.githubusercontent.com/jedburrows/jrun/main/install.sh | bash -s -- --uninstall
+```toml
+[tools]
+node = "lts"
+java = "temurin-17"
+ripgrep = "latest"
+"npm:@jed-dev/jrun" = "latest"
 ```
 
-**From source** (requires Node.js >= 22 and pnpm):
+**Via npm** (if you already have Node.js >= 22):
 
 ```bash
-npm i -g github:jedburrows/jrun
+npm i -g @jed-dev/jrun
 ```
 
 ## Usage
