@@ -20,17 +20,23 @@ type Services =
 
 const isInteractive = (): boolean => Boolean(process.stdout.isTTY && process.stdin.isTTY);
 
-// Render the dashboard once; resolve with the exit intent and unmount Ink.
-const runDashboardOnce = (api: JrunApi): Promise<DashboardIntent> =>
-  new Promise<DashboardIntent>((resolve) => {
-    const holder: { instance?: ReturnType<typeof render> } = {};
-    const onExit = (intent: DashboardIntent) => {
-      resolve(intent);
-      // unmount on next tick so React finishes the current commit cleanly
-      setImmediate(() => holder.instance?.unmount());
-    };
-    holder.instance = render(React.createElement(Dashboard, { api, onExit }));
-  });
+// Render the dashboard once; resolve with the exit intent only AFTER Ink has
+// fully unmounted and restored the terminal (via waitUntilExit). This ordering
+// matters for the edit flow: the loop's synchronous spawnSync($EDITOR) must not
+// run while Ink still owns raw mode + the alt-screen.
+const runDashboardOnce = (api: JrunApi): Promise<DashboardIntent> => {
+  let intent: DashboardIntent = { type: "quit" };
+  const instance = render(
+    React.createElement(Dashboard, {
+      api,
+      onExit: (i: DashboardIntent) => {
+        intent = i;
+        instance.unmount();
+      },
+    })
+  );
+  return instance.waitUntilExit().then(() => intent);
+};
 
 const configFilePath = (name: string) =>
   path.join(os.homedir(), ".jrun", "configs", `${name}.json`);
