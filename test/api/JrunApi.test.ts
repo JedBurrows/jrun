@@ -110,6 +110,10 @@ describe("JrunApi", () => {
     await expect(api.kill("com.example.NeverStarted")).resolves.toBeUndefined();
   });
 
+  it("readLog returns null when the class is not running", async () => {
+    await expect(api.readLog("com.example.NotRunning")).resolves.toBeNull();
+  });
+
   it("loadLastRun returns null when nothing has been run", async () => {
     await expect(api.loadLastRun()).resolves.toBeNull();
   });
