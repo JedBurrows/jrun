@@ -17,6 +17,14 @@ export interface StartSpec {
  * Effect-native) and the future Ink/React TUI go through this seam; this is the
  * bridge for non-Effect consumers. Build it with {@link makeJrunApi} over a
  * runtime that already has the services in context.
+ *
+ * Contract:
+ * - Methods reject with the underlying failure. Service errors are
+ *   `Data.TaggedError` instances — consumers can switch on `error._tag` (e.g.
+ *   `JavaProcessError`). `loadConfig` returns `null` rather than rejecting on a
+ *   missing config; `kill` resolves even if the process is already gone.
+ * - `makeJrunApi` does not own the runtime's lifecycle; the caller is
+ *   responsible for creating and disposing it.
  */
 export interface JrunApi {
   listConfigs(): Promise<string[]>;
@@ -25,6 +33,11 @@ export interface JrunApi {
   deleteConfig(name: string): Promise<void>;
   listMainClasses(): Promise<string[]>;
   listRunning(): Promise<ProcessRecord[]>;
+  /**
+   * Defaults to a detached run. Passing `detached: false` runs in the
+   * foreground, which blocks until the process exits — only do that for a caller
+   * that wants to await the whole run.
+   */
   start(spec: StartSpec): Promise<ProcessRecord>;
   kill(mainClass: string): Promise<void>;
 }
@@ -93,7 +106,7 @@ export const makeJrunApi = (runtime: Runtime.Runtime<Services>): JrunApi => {
             };
           } else {
             if (!spec.mainClass) {
-              return yield* Effect.die(new Error("start requires mainClass or configName"));
+              return yield* Effect.fail(new Error("start requires mainClass or configName"));
             }
             config = {
               mainClass: spec.mainClass,
@@ -101,7 +114,10 @@ export const makeJrunApi = (runtime: Runtime.Runtime<Services>): JrunApi => {
               jvmOpts: [...(spec.jvmOpts ?? [])],
             };
           }
-          return yield* pm.run(config, { detached: spec.detached, debug: spec.debug ?? null });
+          return yield* pm.run(config, {
+            detached: spec.detached ?? true,
+            debug: spec.debug ?? null,
+          });
         })
       ),
     // kill swallows ProcessNotFound: the dashboard kills a row it believes is

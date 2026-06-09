@@ -94,4 +94,14 @@ describe("JrunApi", () => {
     const result = await api.listMainClasses();
     expect(Array.isArray(result)).toBe(true);
   });
+
+  it("start with neither mainClass nor configName rejects", async () => {
+    // Surfaces as a FiberFailure whose `.message` preserves the original Error
+    // message, so the text is accessible to consumers.
+    await expect(api.start({})).rejects.toThrow(/mainClass or configName/);
+  });
+
+  it("kill of a never-started class resolves (swallows ProcessNotFound)", async () => {
+    await expect(api.kill("com.example.NeverStarted")).resolves.toBeUndefined();
+  });
 });
