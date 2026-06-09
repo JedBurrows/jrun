@@ -161,4 +161,13 @@ describe.skipIf(!toolchainPresent)("example project (integration)", () => {
     }, 30_000);
     expect(gone).toBe(true);
   }, 60_000);
+
+  it("HelloWorld runs in the foreground and resolves on clean exit", async () => {
+    const cls = "com.example.HelloWorld";
+    // Foreground start blocks until the process exits; a clean exit (code 0)
+    // resolves, a non-zero exit rejects with JavaProcessError.
+    const rec = await api.start({ mainClass: cls, args: ["Alice"], detached: false });
+    expect(rec.mainClass).toBe(cls);
+    expect(rec.detached).toBe(false);
+  }, 60_000);
 });
