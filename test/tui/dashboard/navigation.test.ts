@@ -1,8 +1,5 @@
 import { describe, expect, it } from "vitest";
-import {
-  initialNav,
-  reduceNav,
-} from "../../../src/tui/dashboard/navigation.js";
+import { initialNav, reduceNav } from "../../../src/tui/dashboard/navigation.js";
 import type { DashboardData } from "../../../src/tui/dashboard/types.js";
 
 const data: DashboardData = {
@@ -88,11 +85,7 @@ describe("reduceNav — panel switching clamps (no wrap)", () => {
 
 describe("reduceNav — focusPanel", () => {
   it("sets focus directly", () => {
-    const next = reduceNav(
-      initialNav,
-      { type: "focusPanel", panel: "mainClasses" },
-      data,
-    );
+    const next = reduceNav(initialNav, { type: "focusPanel", panel: "mainClasses" }, data);
     expect(next.focused).toBe("mainClasses");
   });
 });

@@ -2,7 +2,7 @@ import * as cp from "node:child_process";
 import * as os from "node:os";
 import * as path from "node:path";
 import { Args, Command, Options } from "@effect/cli";
-import { FileSystem } from "@effect/platform";
+import type { FileSystem } from "@effect/platform";
 import { Console, Effect, Option } from "effect";
 import { render } from "ink";
 import React from "react";
