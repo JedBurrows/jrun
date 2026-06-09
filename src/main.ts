@@ -1,6 +1,6 @@
 import { Command } from "@effect/cli";
 import { NodeContext, NodeRuntime } from "@effect/platform-node";
-import { Effect, Layer } from "effect";
+import { Console, Effect, Layer } from "effect";
 
 import { build } from "./commands/build.js";
 import { configs } from "./commands/configs.js";
@@ -11,6 +11,7 @@ import { rerun } from "./commands/rerun.js";
 import { save } from "./commands/save.js";
 import { start } from "./commands/start.js";
 import { status } from "./commands/status.js";
+import { ui, uiEffect } from "./commands/ui.js";
 
 import * as os from "node:os";
 import * as path from "node:path";
@@ -19,8 +20,18 @@ import { JavaProjectLive, ProjectRoot } from "./services/JavaProject.js";
 import { LogDir, PidDir, ProcessManagerLive } from "./services/ProcessManager.js";
 import { TerminalLive } from "./services/Terminal.js";
 
-const jrun = Command.make("jrun").pipe(
-  Command.withSubcommands([build, list, start, save, rerun, status, kill, configs, logs])
+// Bare `jrun`: launch the dashboard on an interactive terminal; otherwise print
+// a usage pointer and exit 0 so pipes/agents don't get a stuck TUI.
+const rootHandler = Effect.gen(function* () {
+  if (process.stdout.isTTY && process.stdin.isTTY) {
+    yield* uiEffect;
+  } else {
+    yield* Console.log("jrun — run `jrun --help` for available commands.");
+  }
+});
+
+const jrun = Command.make("jrun", {}, () => rootHandler).pipe(
+  Command.withSubcommands([build, list, start, save, rerun, status, kill, configs, logs, ui])
 );
 
 const cwd = process.cwd();

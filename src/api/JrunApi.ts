@@ -1,3 +1,4 @@
+import { FileSystem } from "@effect/platform";
 import { Effect, Runtime } from "effect";
 import { ConfigStoreService, type RunConfig } from "../services/ConfigStore.js";
 import { JavaProjectService } from "../services/JavaProject.js";
@@ -41,6 +42,12 @@ export interface JrunApi {
   listMainClasses(): Promise<string[]>;
   listRunning(): Promise<ProcessRecord[]>;
   /**
+   * Returns the contents of a detached run's log file for `mainClass`, or `null`
+   * when the class isn't running detached / the log is unavailable (foreground
+   * run, missing or unreadable file).
+   */
+  readLog(mainClass: string): Promise<string | null>;
+  /**
    * Defaults to a detached run. Passing `detached: false` runs in the
    * foreground, which blocks until the process exits — only do that for a caller
    * that wants to await the whole run.
@@ -49,7 +56,11 @@ export interface JrunApi {
   kill(mainClass: string): Promise<void>;
 }
 
-type Services = JavaProjectService | ProcessManagerService | ConfigStoreService;
+type Services =
+  | JavaProjectService
+  | ProcessManagerService
+  | ConfigStoreService
+  | FileSystem.FileSystem;
 
 export const makeJrunApi = (runtime: Runtime.Runtime<Services>): JrunApi => {
   const run = Runtime.runPromise(runtime);
@@ -105,6 +116,19 @@ export const makeJrunApi = (runtime: Runtime.Runtime<Services>): JrunApi => {
         Effect.gen(function* () {
           const s = yield* ProcessManagerService;
           return yield* s.listRunning;
+        })
+      ),
+    readLog: (mainClass) =>
+      run(
+        Effect.gen(function* () {
+          const pm = yield* ProcessManagerService;
+          const running = yield* pm.listRunning;
+          const record = running.find((r) => r.mainClass === mainClass);
+          if (!record || !record.logFile) return null;
+          const fs = yield* FileSystem.FileSystem;
+          return yield* fs
+            .readFileString(record.logFile)
+            .pipe(Effect.catchAll(() => Effect.succeed<string | null>(null)));
         })
       ),
     start: (spec) =>

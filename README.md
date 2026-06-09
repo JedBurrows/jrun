@@ -45,6 +45,7 @@ jrun <command> [options]
 
 | Command | Description |
 |---|---|
+| `ui` | Launch the interactive dashboard |
 | `build` | Compile (`mvn compile -q`) |
 | `list` | List all main classes in project |
 | `start [--jvm <opts>] [--detached] [--debug <port>] [--debug-suspend] [class] [args...]` | Run main class (or saved config) |
@@ -85,6 +86,52 @@ jrun rerun
 jrun status
 jrun kill com.example.App
 ```
+
+## Dashboard (TUI)
+
+`jrun` ships with a lazygit-style interactive terminal dashboard. Launch it with:
+
+```bash
+jrun ui          # explicit
+jrun             # bare, when run in an interactive terminal
+jrun configs     # the configs command with no subcommand also opens it
+```
+
+The dashboard has three panels plus a detail pane and a context-sensitive hint bar:
+
+- **Configs** — your saved run configurations.
+- **Running** — currently tracked processes.
+- **Main classes** — discoverable main classes in the project.
+
+Select an item to see its details in the detail pane. Destructive actions
+(delete, kill) prompt for `y/N` confirmation. Starts launched from the dashboard
+run detached.
+
+**Keybindings:**
+
+| Keys | Action |
+|---|---|
+| `j` / `k` or ↓ / ↑ | Move down / up |
+| `h` / `l`, Tab / Shift-Tab, ← / → | Previous / next panel |
+| `1` / `2` / `3` | Jump to Configs / Running / Main classes |
+| `g` / `G` | Jump to top / bottom of list |
+| `r` | Refresh |
+| `?` | Help overlay |
+| `q` | Quit |
+
+Per-panel actions:
+
+| Panel | Keys |
+|---|---|
+| Configs | `Enter`/`s` start, `S` start in debug (port 5005), `e` edit (`$EDITOR`), `d` delete |
+| Running | `Enter` view logs, `x` kill |
+| Main classes | `Enter`/`s` start, `S` start in debug, `w` save as config |
+
+Note: kill is `x` (not `k`, which is vim-up), and logs open with `Enter` (not
+`l`, which switches panels).
+
+The dashboard is for humans. Agents and scripts should drive the CLI directly
+with `--json` (see [Agent / scripting use](#agent--scripting-use)).
 
 ## Agent / scripting use
 
