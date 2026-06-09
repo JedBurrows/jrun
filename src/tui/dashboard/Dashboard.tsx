@@ -1,20 +1,35 @@
 import { Box, Text, useInput } from "ink";
-import React, { useCallback, useEffect, useState } from "react";
+import React, { useCallback, useEffect, useRef, useState } from "react";
 import type { JrunApi } from "../../api/JrunApi.js";
 import type { RunConfig } from "../../services/ConfigStore.js";
 import { DetailPane } from "./DetailPane.js";
 import { HelpOverlay } from "./HelpOverlay.js";
+import { LogView } from "./LogView.js";
 import { Panels } from "./Panels.js";
+import { ConfirmPrompt, TextPrompt } from "./Prompts.js";
 import { StatusBar } from "./StatusBar.js";
 import { type KeyFlags, resolveKey } from "./keymap.js";
 import { initialNav, reduceNav } from "./navigation.js";
-import type { DashboardData, NavState } from "./types.js";
+import type { Action, DashboardData, NavState } from "./types.js";
 
-export type DashboardIntent = { type: "quit" };
+export type DashboardIntent = { type: "quit" } | { type: "edit"; name: string };
 
 interface Props {
   api: JrunApi;
   onExit: (intent: DashboardIntent) => void;
+}
+
+type Mode = "normal" | "help" | "confirm" | "prompt" | "logs";
+
+interface Pending {
+  verb: string;
+  target: string;
+  run: () => Promise<void>;
+}
+
+interface LogState {
+  mainClass: string;
+  text: string | null;
 }
 
 const EMPTY: DashboardData = {
@@ -23,6 +38,8 @@ const EMPTY: DashboardData = {
   mainClasses: [],
   configDetails: {},
 };
+
+const DEBUG = { port: 5005, suspend: false } as const;
 
 const NAV_ACTIONS = new Set([
   "moveUp",
@@ -34,11 +51,36 @@ const NAV_ACTIONS = new Set([
   "bottom",
 ]);
 
+const errMsg = (err: unknown): string => {
+  if (err instanceof Error) return err.message;
+  const m = (err as { message?: string })?.message;
+  return m ?? String(err);
+};
+
 export function Dashboard({ api, onExit }: Props) {
   const [data, setData] = useState<DashboardData | null>(null);
   const [nav, setNav] = useState<NavState>(initialNav);
-  const [message] = useState<string | null>(null);
-  const [mode, setMode] = useState<"normal" | "help">("normal");
+  const [message, setMessage] = useState<string | null>(null);
+  const [isError, setIsError] = useState(false);
+  const [mode, setMode] = useState<Mode>("normal");
+  const [pending, setPending] = useState<Pending | null>(null);
+  const [buffer, setBuffer] = useState("");
+  const [log, setLog] = useState<LogState | null>(null);
+  const [busy, setBusy] = useState(false);
+
+  const mounted = useRef(true);
+  useEffect(() => {
+    mounted.current = true;
+    return () => {
+      mounted.current = false;
+    };
+  }, []);
+
+  const note = useCallback((msg: string | null, error = false) => {
+    if (!mounted.current) return;
+    setMessage(msg);
+    setIsError(error);
+  }, []);
 
   const refresh = useCallback(async () => {
     const [configs, running, mainClasses] = await Promise.all([
@@ -53,20 +95,200 @@ export function Dashboard({ api, onExit }: Props) {
         if (cfg) configDetails[name] = cfg;
       })
     );
-    setData({ configs, running, mainClasses, configDetails });
+    if (mounted.current) setData({ configs, running, mainClasses, configDetails });
   }, [api]);
 
   useEffect(() => {
-    void refresh();
-  }, [refresh]);
+    void (async () => {
+      try {
+        await refresh();
+      } catch (err) {
+        // Initial load failed: render an empty (but usable/quittable) dashboard
+        // and surface the error rather than hanging on "Loading…".
+        if (mounted.current) setData(EMPTY);
+        note(errMsg(err), true);
+      }
+    })();
+  }, [refresh, note]);
+
+  // Run an async mutation: guard against overlap, surface errors, refresh.
+  const runMutation = useCallback(
+    async (work: () => Promise<void>, onOk?: () => void) => {
+      setBusy(true);
+      try {
+        await work();
+        onOk?.();
+        await refresh();
+      } catch (err) {
+        note(errMsg(err), true);
+      } finally {
+        if (mounted.current) setBusy(false);
+      }
+    },
+    [refresh, note]
+  );
+
+  const selectedMainClass = (): string | undefined =>
+    (data ?? EMPTY).mainClasses[nav.selected.mainClasses];
+
+  const openLogs = useCallback(
+    async (mainClass: string) => {
+      setBusy(true);
+      try {
+        const text = await api.readLog(mainClass);
+        if (!mounted.current) return;
+        setLog({ mainClass, text: text ?? "(no log available)" });
+        setMode("logs");
+      } catch (err) {
+        note(errMsg(err), true);
+      } finally {
+        if (mounted.current) setBusy(false);
+      }
+    },
+    [api, note]
+  );
+
+  const reloadLogs = useCallback(async () => {
+    if (!log) return;
+    try {
+      const text = await api.readLog(log.mainClass);
+      if (mounted.current) setLog({ mainClass: log.mainClass, text: text ?? "(no log available)" });
+    } catch (err) {
+      note(errMsg(err), true);
+    }
+  }, [api, log, note]);
+
+  // Dispatch a normal-mode action to the right JrunApi call / mode transition.
+  const runAction = useCallback(
+    (action: Action) => {
+      const d = data ?? EMPTY;
+      switch (nav.focused) {
+        case "configs": {
+          const name = d.configs[nav.selected.configs];
+          if (!name) return;
+          if (action.type === "start" || action.type === "primary") {
+            note(null);
+            void runMutation(
+              () => api.start({ configName: name }).then(() => {}),
+              () => note(`Started ${name}`)
+            );
+          } else if (action.type === "startDebug") {
+            note(null);
+            void runMutation(
+              () => api.start({ configName: name, debug: DEBUG }).then(() => {}),
+              () => note(`Started ${name} [debug:5005]`)
+            );
+          } else if (action.type === "edit") {
+            onExit({ type: "edit", name });
+          } else if (action.type === "delete") {
+            setPending({
+              verb: "delete",
+              target: name,
+              run: () => api.deleteConfig(name),
+            });
+            setMode("confirm");
+          }
+          return;
+        }
+        case "running": {
+          const rec = d.running[nav.selected.running];
+          if (!rec) return;
+          if (action.type === "primary") {
+            void openLogs(rec.mainClass);
+          } else if (action.type === "kill") {
+            setPending({
+              verb: "kill",
+              target: rec.mainClass,
+              run: () => api.kill(rec.mainClass),
+            });
+            setMode("confirm");
+          }
+          return;
+        }
+        case "mainClasses": {
+          const fqcn = d.mainClasses[nav.selected.mainClasses];
+          if (!fqcn) return;
+          if (action.type === "start" || action.type === "primary") {
+            note(null);
+            void runMutation(
+              () => api.start({ mainClass: fqcn }).then(() => {}),
+              () => note(`Started ${fqcn}`)
+            );
+          } else if (action.type === "startDebug") {
+            note(null);
+            void runMutation(
+              () => api.start({ mainClass: fqcn, debug: DEBUG }).then(() => {}),
+              () => note(`Started ${fqcn} [debug:5005]`)
+            );
+          } else if (action.type === "saveAsConfig") {
+            setBuffer("");
+            setMode("prompt");
+          }
+          return;
+        }
+      }
+    },
+    [nav, data, api, runMutation, openLogs, onExit, note]
+  );
 
   useInput((input, key) => {
     if (mode === "help") {
-      if (input === "?" || key.escape || input === "q") {
+      if (input === "?" || key.escape || input === "q") setMode("normal");
+      return;
+    }
+
+    if (mode === "confirm") {
+      if (input === "y" || input === "Y") {
+        const p = pending;
         setMode("normal");
+        setPending(null);
+        if (p) void runMutation(p.run, () => note(`${p.verb} ${p.target}`));
+      } else {
+        setMode("normal");
+        setPending(null);
       }
       return;
     }
+
+    if (mode === "prompt") {
+      if (key.escape) {
+        setMode("normal");
+        setBuffer("");
+        return;
+      }
+      if (key.return) {
+        const name = buffer.trim();
+        if (name.length === 0) return;
+        const fqcn = selectedMainClass();
+        setMode("normal");
+        setBuffer("");
+        if (fqcn) {
+          void runMutation(
+            () => api.saveConfig(name, { mainClass: fqcn, programArgs: [], jvmOpts: [] }),
+            () => note(`Saved ${name}`)
+          );
+        }
+        return;
+      }
+      if (key.backspace || key.delete) {
+        setBuffer((b) => b.slice(0, -1));
+        return;
+      }
+      if (input && !key.ctrl && !key.meta) setBuffer((b) => b + input);
+      return;
+    }
+
+    if (mode === "logs") {
+      if (input === "q" || key.escape) {
+        setMode("normal");
+        setLog(null);
+      } else if (input === "r") {
+        void reloadLogs();
+      }
+      return;
+    }
+
+    // Normal mode.
     const flags: KeyFlags = {
       upArrow: key.upArrow,
       downArrow: key.downArrow,
@@ -88,14 +310,17 @@ export function Dashboard({ api, onExit }: Props) {
       return;
     }
     if (action.type === "refresh") {
-      void refresh();
+      note(null);
+      void runMutation(async () => {});
       return;
     }
     if (action.type === "help") {
       setMode("help");
       return;
     }
-    // Other actions (start/kill/edit/delete/...) are wired in a later task.
+    // Action keys are ignored while a mutation is in flight to avoid overlap.
+    if (busy) return;
+    runAction(action);
   });
 
   if (data === null) {
@@ -115,13 +340,28 @@ export function Dashboard({ api, onExit }: Props) {
     );
   }
 
+  if (mode === "logs" && log) {
+    return (
+      <Box flexDirection="column">
+        <LogView mainClass={log.mainClass} text={log.text} />
+        <StatusBar panel={nav.focused} message={isError ? message : null} isError={isError} />
+      </Box>
+    );
+  }
+
   return (
     <Box flexDirection="column">
       <Box flexDirection="row">
         <Panels data={data} nav={nav} />
         <DetailPane data={data} nav={nav} />
       </Box>
-      <StatusBar panel={nav.focused} message={message} />
+      {mode === "confirm" && pending ? (
+        <ConfirmPrompt label={`${pending.verb} ${pending.target}? (y/N)`} />
+      ) : mode === "prompt" ? (
+        <TextPrompt label="Save as config name:" value={buffer} />
+      ) : (
+        <StatusBar panel={nav.focused} message={message} isError={isError} />
+      )}
     </Box>
   );
 }
