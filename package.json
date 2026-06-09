@@ -13,7 +13,7 @@
   "files": ["bin", "dist"],
   "repository": {
     "type": "git",
-    "url": "git+https://github.com/jedburrows/jrun.git"
+    "url": "git+https://github.com/JedBurrows/jrun.git"
   },
   "publishConfig": {
     "access": "public",
