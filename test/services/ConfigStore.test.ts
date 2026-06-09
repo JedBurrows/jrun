@@ -156,4 +156,23 @@ describe("ConfigStore", () => {
       })
     )
   );
+
+  it.effect("delete removes a saved config", () =>
+    makeTest((store) =>
+      Effect.gen(function* () {
+        yield* store.save("doomed", testConfig);
+        expect(yield* store.list).toContain("doomed");
+        yield* store.delete("doomed");
+        expect(yield* store.list).not.toContain("doomed");
+      })
+    )
+  );
+
+  it.effect("delete of a missing config is a no-op (does not fail)", () =>
+    makeTest((store) =>
+      Effect.gen(function* () {
+        yield* store.delete("never-existed"); // must not throw
+      })
+    )
+  );
 });

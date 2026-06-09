@@ -171,3 +171,28 @@ public class Util {
     )
   );
 });
+
+describe("JavaProject.resolveClasspath", () => {
+  it.effect("uses the classpath cache when it is newer than pom.xml", () =>
+    Effect.gen(function* () {
+      const fs = yield* FileSystem.FileSystem;
+      const root = yield* fs.makeTempDirectory();
+      yield* fs.writeFileString(`${root}/pom.xml`, "<project/>");
+      yield* fs.writeFileString(`${root}/.jrun-classpath-cache`, "dep1.jar:dep2.jar");
+      const future = new Date(Date.now() + 60_000);
+      yield* Effect.sync(() =>
+        require("node:fs").utimesSync(`${root}/.jrun-classpath-cache`, future, future)
+      );
+
+      const layer = JavaProjectLive.pipe(
+        Layer.provide(Layer.succeed(ProjectRoot, root)),
+        Layer.provide(NodeContext.layer)
+      );
+      const cp = yield* JavaProjectService.pipe(
+        Effect.flatMap((p) => p.resolveClasspath),
+        Effect.provide(layer)
+      );
+      expect(cp).toBe("target/classes:dep1.jar:dep2.jar");
+    }).pipe(Effect.provide(NodeContext.layer))
+  );
+});
