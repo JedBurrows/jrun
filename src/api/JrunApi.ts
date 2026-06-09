@@ -27,13 +27,15 @@ export interface StartSpec {
  *   not read `_tag` off the caught value directly. (If Phase 4 needs ergonomic
  *   tagged-error handling, map known failures to plain shapes at this seam.)
  * - `loadConfig` returns `null` rather than rejecting on a missing config;
- *   `kill` resolves even if the process is already gone.
+ *   `loadLastRun` returns `null` when there is no previous run; `kill` resolves
+ *   even if the process is already gone.
  * - `makeJrunApi` does not own the runtime's lifecycle; the caller is
  *   responsible for creating and disposing it.
  */
 export interface JrunApi {
   listConfigs(): Promise<string[]>;
   loadConfig(name: string): Promise<RunConfig | null>;
+  loadLastRun(): Promise<RunConfig | null>;
   saveConfig(name: string, cfg: RunConfig): Promise<void>;
   deleteConfig(name: string): Promise<void>;
   listMainClasses(): Promise<string[]>;
@@ -66,6 +68,15 @@ export const makeJrunApi = (runtime: Runtime.Runtime<Services>): JrunApi => {
           return yield* s
             .load(name)
             .pipe(Effect.catchTag("ConfigNotFound", () => Effect.succeed<RunConfig | null>(null)));
+        })
+      ),
+    loadLastRun: () =>
+      run(
+        Effect.gen(function* () {
+          const s = yield* ConfigStoreService;
+          return yield* s.loadLastRun.pipe(
+            Effect.catchTag("NoLastRun", () => Effect.succeed<RunConfig | null>(null))
+          );
         })
       ),
     saveConfig: (name, cfg) =>
@@ -119,6 +130,7 @@ export const makeJrunApi = (runtime: Runtime.Runtime<Services>): JrunApi => {
               jvmOpts: [...(spec.jvmOpts ?? [])],
             };
           }
+          yield* configStore.saveLastRun(config);
           return yield* pm.run(config, {
             detached: spec.detached ?? true,
             debug: spec.debug ?? null,

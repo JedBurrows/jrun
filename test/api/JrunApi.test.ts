@@ -2,10 +2,15 @@ import * as fs from "node:fs";
 import * as os from "node:os";
 import * as path from "node:path";
 import { NodeContext } from "@effect/platform-node";
-import { Layer, ManagedRuntime } from "effect";
+import { Effect, Layer, ManagedRuntime } from "effect";
 import { afterAll, beforeAll, describe, expect, it } from "vitest";
 import { type JrunApi, makeJrunApi } from "../../src/api/JrunApi.js";
-import { ConfigDir, ConfigStoreLive, type RunConfig } from "../../src/services/ConfigStore.js";
+import {
+  ConfigDir,
+  ConfigStoreLive,
+  ConfigStoreService,
+  type RunConfig,
+} from "../../src/services/ConfigStore.js";
 import { JavaProjectLive, ProjectRoot } from "../../src/services/JavaProject.js";
 import { LogDir, PidDir, ProcessManagerLive } from "../../src/services/ProcessManager.js";
 
@@ -103,5 +108,20 @@ describe("JrunApi", () => {
 
   it("kill of a never-started class resolves (swallows ProcessNotFound)", async () => {
     await expect(api.kill("com.example.NeverStarted")).resolves.toBeUndefined();
+  });
+
+  it("loadLastRun returns null when nothing has been run", async () => {
+    await expect(api.loadLastRun()).resolves.toBeNull();
+  });
+
+  it("loadLastRun returns the saved last-run", async () => {
+    // Seed last-run directly through the underlying store on the SAME runtime.
+    await mr.runPromise(
+      Effect.gen(function* () {
+        const s = yield* ConfigStoreService;
+        yield* s.saveLastRun(cfg);
+      })
+    );
+    expect(await api.loadLastRun()).toEqual(cfg);
   });
 });
