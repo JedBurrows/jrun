@@ -40,11 +40,3 @@ export const TerminalLive = Layer.succeed(TerminalService, {
       return result as boolean;
     }),
 });
-
-export const makeTerminalTest = (responses: unknown[]) => {
-  let idx = 0;
-  return Layer.succeed(TerminalService, {
-    select: () => Effect.sync(() => responses[idx++] as never),
-    confirm: () => Effect.sync(() => responses[idx++] as boolean),
-  });
-};
