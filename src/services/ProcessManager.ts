@@ -371,9 +371,9 @@ export const ProcessManagerLive = Layer.effect(
             .pipe(Effect.catchAll(() => Effect.succeed<string | null>(null)));
         }
         // Process has exited (or was never started): scan the log dir for the
-        // most-recently-modified log file whose name matches this project hash +
-        // class name.  This lets callers read the log of a batch job that already
-        // finished by the time they poll.
+        // most-recent (by start timestamp in the filename) log file whose name
+        // matches this project hash + class name.  This lets callers read the
+        // log of a batch job that already finished by the time they poll.
         const prefix = `${hash}-${mainClass}-`;
         const exists = yield* fs.exists(logDir);
         if (!exists) return null;
