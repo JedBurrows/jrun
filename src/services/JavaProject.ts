@@ -1,7 +1,7 @@
 import { CommandExecutor, FileSystem, Path } from "@effect/platform";
 import { Command } from "@effect/platform";
 import type { PlatformError } from "@effect/platform/Error";
-import { Context, Effect, Layer } from "effect";
+import { Context, Effect, Layer, Option } from "effect";
 
 export class ProjectRoot extends Context.Tag("ProjectRoot")<ProjectRoot, string>() {}
 
@@ -76,10 +76,12 @@ export const JavaProjectLive = Layer.effect(
         if (cacheExists) {
           const cacheStat = yield* fs.stat(cacheFile);
           const pomStat = yield* fs.stat(pomFile);
+          const cacheMtime = Option.getOrNull(cacheStat.mtime);
+          const pomMtime = Option.getOrNull(pomStat.mtime);
           if (
-            cacheStat.mtime !== undefined &&
-            pomStat.mtime !== undefined &&
-            cacheStat.mtime > pomStat.mtime
+            cacheMtime !== null &&
+            pomMtime !== null &&
+            cacheMtime.getTime() > pomMtime.getTime()
           ) {
             const cached = yield* fs.readFileString(cacheFile);
             return `target/classes:${cached.trim()}`;
