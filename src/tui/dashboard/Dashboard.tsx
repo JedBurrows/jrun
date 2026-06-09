@@ -65,6 +65,7 @@ export function Dashboard({ api, onExit }: Props) {
   const [mode, setMode] = useState<Mode>("normal");
   const [pending, setPending] = useState<Pending | null>(null);
   const [buffer, setBuffer] = useState("");
+  const [pendingSaveClass, setPendingSaveClass] = useState<string | null>(null);
   const [log, setLog] = useState<LogState | null>(null);
   const [busy, setBusy] = useState(false);
 
@@ -128,15 +129,13 @@ export function Dashboard({ api, onExit }: Props) {
     [refresh, note]
   );
 
-  const selectedMainClass = (): string | undefined =>
-    (data ?? EMPTY).mainClasses[nav.selected.mainClasses];
-
   const openLogs = useCallback(
     async (mainClass: string) => {
       setBusy(true);
       try {
         const text = await api.readLog(mainClass);
         if (!mounted.current) return;
+        note(null); // clear any stale error before showing the log pane
         setLog({ mainClass, text: text ?? "(no log available)" });
         setMode("logs");
       } catch (err) {
@@ -221,6 +220,9 @@ export function Dashboard({ api, onExit }: Props) {
               () => note(`Started ${fqcn} [debug:5005]`)
             );
           } else if (action.type === "saveAsConfig") {
+            // Fix the target at the moment of choice, mirroring the confirm
+            // Pending pattern — don't re-read selection at submit time.
+            setPendingSaveClass(fqcn);
             setBuffer("");
             setMode("prompt");
           }
@@ -254,18 +256,20 @@ export function Dashboard({ api, onExit }: Props) {
       if (key.escape) {
         setMode("normal");
         setBuffer("");
+        setPendingSaveClass(null);
         return;
       }
       if (key.return) {
         const name = buffer.trim();
         if (name.length === 0) return;
-        const fqcn = selectedMainClass();
+        const fqcn = pendingSaveClass;
         setMode("normal");
         setBuffer("");
+        setPendingSaveClass(null);
         if (fqcn) {
           void runMutation(
             () => api.saveConfig(name, { mainClass: fqcn, programArgs: [], jvmOpts: [] }),
-            () => note(`Saved ${name}`)
+            () => note(`Saved config "${name}"`)
           );
         }
         return;

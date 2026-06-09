@@ -260,6 +260,28 @@ describe("Dashboard", () => {
     });
   });
 
+  it("treats printable action-keys as prompt text, not actions", async () => {
+    const api = mockApi();
+    const onExit = vi.fn();
+    const { stdin } = render(<Dashboard api={api} onExit={onExit} />);
+    await flush();
+    stdin.write("3"); // focus mainClasses
+    await flush();
+    stdin.write("w");
+    await flush();
+    stdin.write("qdserver"); // contains q (quit) and d (delete)
+    await flush();
+    stdin.write("\r"); // Enter
+    await flush();
+    expect(api.saveConfig).toHaveBeenCalledWith("qdserver", {
+      mainClass: "com.x.A",
+      programArgs: [],
+      jvmOpts: [],
+    });
+    expect(api.deleteConfig).not.toHaveBeenCalled();
+    expect(onExit).not.toHaveBeenCalledWith({ type: "quit" });
+  });
+
   it("surfaces an error from a failed action", async () => {
     const api = mockApi({ start: vi.fn().mockRejectedValue(new Error("boom")) });
     const { stdin, lastFrame } = render(<Dashboard api={api} onExit={() => {}} />);
