@@ -3,6 +3,7 @@ import React, { useCallback, useEffect, useState } from "react";
 import type { JrunApi } from "../../api/JrunApi.js";
 import type { RunConfig } from "../../services/ConfigStore.js";
 import { DetailPane } from "./DetailPane.js";
+import { HelpOverlay } from "./HelpOverlay.js";
 import { Panels } from "./Panels.js";
 import { StatusBar } from "./StatusBar.js";
 import { type KeyFlags, resolveKey } from "./keymap.js";
@@ -37,6 +38,7 @@ export function Dashboard({ api, onExit }: Props) {
   const [data, setData] = useState<DashboardData | null>(null);
   const [nav, setNav] = useState<NavState>(initialNav);
   const [message] = useState<string | null>(null);
+  const [mode, setMode] = useState<"normal" | "help">("normal");
 
   const refresh = useCallback(async () => {
     const [configs, running, mainClasses] = await Promise.all([
@@ -59,6 +61,12 @@ export function Dashboard({ api, onExit }: Props) {
   }, [refresh]);
 
   useInput((input, key) => {
+    if (mode === "help") {
+      if (input === "?" || key.escape || input === "q") {
+        setMode("normal");
+      }
+      return;
+    }
     const flags: KeyFlags = {
       upArrow: key.upArrow,
       downArrow: key.downArrow,
@@ -83,13 +91,26 @@ export function Dashboard({ api, onExit }: Props) {
       void refresh();
       return;
     }
-    // Other actions (start/kill/edit/delete/help/...) are wired in a later task.
+    if (action.type === "help") {
+      setMode("help");
+      return;
+    }
+    // Other actions (start/kill/edit/delete/...) are wired in a later task.
   });
 
   if (data === null) {
     return (
       <Box padding={1}>
         <Text>Loading…</Text>
+      </Box>
+    );
+  }
+
+  if (mode === "help") {
+    return (
+      <Box flexDirection="column">
+        <HelpOverlay />
+        <StatusBar panel={nav.focused} message="press ? / Esc / q to close" />
       </Box>
     );
   }

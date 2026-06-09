@@ -6,7 +6,7 @@ import { Dashboard } from "../../../src/tui/dashboard/Dashboard.js";
 
 const flush = async () => {
   for (let i = 0; i < 5; i++) await Promise.resolve();
-  await new Promise((r) => setTimeout(r, 10));
+  await new Promise((r) => setTimeout(r, 20));
 };
 
 const stubApi = (): JrunApi => ({
@@ -51,5 +51,78 @@ describe("Dashboard", () => {
     expect(frame).toContain("alpha"); // config name
     expect(frame).toContain("com.x.Server"); // running process
     expect(frame).toContain("com.x.B"); // main class
+  });
+
+  it("shows the help overlay on ?", async () => {
+    const { lastFrame, stdin } = render(<Dashboard api={stubApi()} onExit={() => {}} />);
+    await flush();
+    stdin.write("?");
+    await flush();
+    const frame = lastFrame() ?? "";
+    expect(frame).toContain("Keybindings");
+    expect(frame).toContain("start");
+    expect(frame).toContain("kill");
+    expect(frame).toContain("save");
+    expect(frame).toContain("quit");
+    expect(frame).toMatch(/navigate|\bj\b/);
+  });
+
+  it("toggles the help overlay off with ? without quitting", async () => {
+    let quit = false;
+    const { lastFrame, stdin } = render(
+      <Dashboard
+        api={stubApi()}
+        onExit={() => {
+          quit = true;
+        }}
+      />
+    );
+    await flush();
+    stdin.write("?");
+    await flush();
+    expect(lastFrame() ?? "").toContain("Keybindings");
+    stdin.write("?");
+    await flush();
+    expect(lastFrame() ?? "").not.toContain("Keybindings");
+    expect(quit).toBe(false);
+  });
+
+  it("closes the help overlay with Esc without quitting", async () => {
+    let quit = false;
+    const { lastFrame, stdin } = render(
+      <Dashboard
+        api={stubApi()}
+        onExit={() => {
+          quit = true;
+        }}
+      />
+    );
+    await flush();
+    stdin.write("?");
+    await flush();
+    expect(lastFrame() ?? "").toContain("Keybindings");
+    stdin.write(""); // Esc
+    await flush();
+    expect(lastFrame() ?? "").not.toContain("Keybindings");
+    expect(quit).toBe(false);
+  });
+
+  it("closes the help overlay with q without quitting", async () => {
+    let quit = false;
+    const { lastFrame, stdin } = render(
+      <Dashboard
+        api={stubApi()}
+        onExit={() => {
+          quit = true;
+        }}
+      />
+    );
+    await flush();
+    stdin.write("?");
+    await flush();
+    stdin.write("q");
+    await flush();
+    expect(lastFrame() ?? "").not.toContain("Keybindings");
+    expect(quit).toBe(false);
   });
 });

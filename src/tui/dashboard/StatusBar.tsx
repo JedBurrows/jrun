@@ -1,5 +1,6 @@
 import { Box, Text } from "ink";
 import React from "react";
+import { type Hint, hintsFor } from "./hints.js";
 import type { Panel } from "./types.js";
 
 interface Props {
@@ -7,11 +8,8 @@ interface Props {
   message: string | null;
 }
 
-const HINTS: Record<Panel, string> = {
-  configs: "↑↓/jk nav  s start  S debug  e edit  d delete  ?:help  q:quit",
-  running: "↑↓/jk nav  x kill  ⏎ logs  ?:help  q:quit",
-  mainClasses: "↑↓/jk nav  s start  S debug  w save  ?:help  q:quit",
-};
+const format = (hints: readonly Hint[]): string =>
+  hints.map((h) => `${h.keys}:${h.label}`).join("  ");
 
 export function StatusBar({ panel, message }: Props) {
   return (
@@ -19,7 +17,7 @@ export function StatusBar({ panel, message }: Props) {
       {message !== null ? (
         <Text color="green">{message}</Text>
       ) : (
-        <Text dimColor>{HINTS[panel]}</Text>
+        <Text dimColor>{format(hintsFor(panel))}</Text>
       )}
     </Box>
   );
