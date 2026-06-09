@@ -24,6 +24,21 @@ const setSel = (nav: NavState, panel: Panel, idx: number, data: DashboardData): 
 });
 
 /**
+ * Re-clamp every panel's selection to its current list length. Call this after
+ * the underlying data shrinks (e.g. deleting the last config, killing the last
+ * running process) so a selection that pointed past the end snaps back to a
+ * valid item instead of "disappearing" until the next nav keypress.
+ */
+export const clampNav = (nav: NavState, data: DashboardData): NavState => ({
+  ...nav,
+  selected: {
+    configs: clampSel("configs", nav.selected.configs, data),
+    running: clampSel("running", nav.selected.running, data),
+    mainClasses: clampSel("mainClasses", nav.selected.mainClasses, data),
+  },
+});
+
+/**
  * Pure navigation reducer for the dashboard. Handles only navigation actions
  * (moveUp/moveDown/nextPanel/prevPanel/focusPanel/top/bottom); any other action
  * returns `nav` unchanged. Selection is tracked per panel and clamped to that

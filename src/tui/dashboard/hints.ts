@@ -17,7 +17,7 @@ export const GLOBAL_HINTS: readonly Hint[] = [
 // Panel-specific action hints.
 export const PANEL_HINTS: Record<Panel, readonly Hint[]> = {
   configs: [
-    { keys: "s", label: "start" },
+    { keys: "⏎/s", label: "start" },
     { keys: "S", label: "debug" },
     { keys: "e", label: "edit" },
     { keys: "d", label: "delete" },
@@ -27,7 +27,7 @@ export const PANEL_HINTS: Record<Panel, readonly Hint[]> = {
     { keys: "x", label: "kill" },
   ],
   mainClasses: [
-    { keys: "s", label: "start" },
+    { keys: "⏎/s", label: "start" },
     { keys: "S", label: "debug" },
     { keys: "w", label: "save" },
   ],

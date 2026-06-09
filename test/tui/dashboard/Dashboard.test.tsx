@@ -282,6 +282,32 @@ describe("Dashboard", () => {
     expect(onExit).not.toHaveBeenCalledWith({ type: "quit" });
   });
 
+  it("re-clamps the selection after deleting the last config", async () => {
+    // 3 configs first, then 1 after the delete refreshes.
+    const listConfigs = vi.fn().mockResolvedValueOnce(["a", "b", "c"]).mockResolvedValue(["a"]);
+    const loadConfig = vi.fn(async (name: string) => ({
+      mainClass: `com.x.${name}`,
+      programArgs: [],
+      jvmOpts: [],
+    }));
+    const api = mockApi({ listConfigs, loadConfig });
+    const { stdin, lastFrame } = render(<Dashboard api={api} onExit={() => {}} />);
+    await flush();
+    stdin.write("G"); // jump to the last config (index 2 = "c")
+    await flush();
+    expect(lastFrame() ?? "").toContain("mainClass: com.x.c");
+    stdin.write("d");
+    await flush();
+    stdin.write("y"); // confirm delete
+    await flush();
+    expect(api.deleteConfig).toHaveBeenCalledWith("c");
+    const frame = lastFrame() ?? "";
+    // Selection must snap back into range — no out-of-range / blank detail.
+    expect(frame).not.toContain("com.x.c");
+    expect(frame).toContain("mainClass: com.x.a");
+    expect(frame).not.toContain("(nothing selected)");
+  });
+
   it("surfaces an error from a failed action", async () => {
     const api = mockApi({ start: vi.fn().mockRejectedValue(new Error("boom")) });
     const { stdin, lastFrame } = render(<Dashboard api={api} onExit={() => {}} />);

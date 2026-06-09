@@ -9,7 +9,7 @@ import { Panels } from "./Panels.js";
 import { ConfirmPrompt, TextPrompt } from "./Prompts.js";
 import { StatusBar } from "./StatusBar.js";
 import { type KeyFlags, resolveKey } from "./keymap.js";
-import { initialNav, reduceNav } from "./navigation.js";
+import { clampNav, initialNav, reduceNav } from "./navigation.js";
 import type { Action, DashboardData, NavState } from "./types.js";
 
 export type DashboardIntent = { type: "quit" } | { type: "edit"; name: string };
@@ -22,8 +22,11 @@ interface Props {
 type Mode = "normal" | "help" | "confirm" | "prompt" | "logs";
 
 interface Pending {
+  // `verb`/`target` build the imperative confirm prompt ("delete alpha? (y/N)");
+  // `done` is the past-tense note shown on success ("Deleted \"alpha\"").
   verb: string;
   target: string;
+  done: string;
   run: () => Promise<void>;
 }
 
@@ -96,7 +99,11 @@ export function Dashboard({ api, onExit }: Props) {
         if (cfg) configDetails[name] = cfg;
       })
     );
-    if (mounted.current) setData({ configs, running, mainClasses, configDetails });
+    if (!mounted.current) return;
+    const next = { configs, running, mainClasses, configDetails };
+    setData(next);
+    // Re-clamp selection: a shrink (delete/kill) can leave it past the new end.
+    setNav((n) => clampNav(n, next));
   }, [api]);
 
   useEffect(() => {
@@ -183,6 +190,7 @@ export function Dashboard({ api, onExit }: Props) {
             setPending({
               verb: "delete",
               target: name,
+              done: `Deleted "${name}"`,
               run: () => api.deleteConfig(name),
             });
             setMode("confirm");
@@ -198,6 +206,7 @@ export function Dashboard({ api, onExit }: Props) {
             setPending({
               verb: "kill",
               target: rec.mainClass,
+              done: `Killed ${rec.mainClass}`,
               run: () => api.kill(rec.mainClass),
             });
             setMode("confirm");
@@ -244,7 +253,7 @@ export function Dashboard({ api, onExit }: Props) {
         const p = pending;
         setMode("normal");
         setPending(null);
-        if (p) void runMutation(p.run, () => note(`${p.verb} ${p.target}`));
+        if (p) void runMutation(p.run, () => note(p.done));
       } else {
         setMode("normal");
         setPending(null);

@@ -123,9 +123,9 @@ Per-panel actions:
 
 | Panel | Keys |
 |---|---|
-| Configs | `s` start, `S` start in debug (port 5005), `e` edit (`$EDITOR`), `d` delete |
+| Configs | `Enter`/`s` start, `S` start in debug (port 5005), `e` edit (`$EDITOR`), `d` delete |
 | Running | `Enter` view logs, `x` kill |
-| Main classes | `s` start, `S` start in debug, `w` save as config |
+| Main classes | `Enter`/`s` start, `S` start in debug, `w` save as config |
 
 Note: kill is `x` (not `k`, which is vim-up), and logs open with `Enter` (not
 `l`, which switches panels).
