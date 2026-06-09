@@ -19,10 +19,15 @@ export interface StartSpec {
  * runtime that already has the services in context.
  *
  * Contract:
- * - Methods reject with the underlying failure. Service errors are
- *   `Data.TaggedError` instances — consumers can switch on `error._tag` (e.g.
- *   `JavaProcessError`). `loadConfig` returns `null` rather than rejecting on a
- *   missing config; `kill` resolves even if the process is already gone.
+ * - Methods reject with a `FiberFailure` wrapping the underlying failure. The
+ *   original `Error.message` is preserved (`error.message` / `String(error)`),
+ *   so a consumer can always surface a readable message. The underlying service
+ *   failures are `Data.TaggedError` instances (e.g. `JavaProcessError`), but they
+ *   arrive cause-wrapped — to branch on `_tag` a consumer must unwrap the cause,
+ *   not read `_tag` off the caught value directly. (If Phase 4 needs ergonomic
+ *   tagged-error handling, map known failures to plain shapes at this seam.)
+ * - `loadConfig` returns `null` rather than rejecting on a missing config;
+ *   `kill` resolves even if the process is already gone.
  * - `makeJrunApi` does not own the runtime's lifecycle; the caller is
  *   responsible for creating and disposing it.
  */
