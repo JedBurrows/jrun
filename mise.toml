@@ -1,3 +1,5 @@
 [tools]
 node = "lts"
 git-cliff = "latest"
+java = "temurin-17"
+maven = "latest"
