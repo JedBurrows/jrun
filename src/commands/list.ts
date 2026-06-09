@@ -1,11 +1,20 @@
-import { Command } from "@effect/cli";
+import { Command, Options } from "@effect/cli";
 import { Console, Effect } from "effect";
 import { JavaProjectService } from "../services/JavaProject.js";
 
-export const list = Command.make("list", {}, () =>
+const jsonOption = Options.boolean("json").pipe(
+  Options.withDescription("Emit machine-readable JSON output")
+);
+
+export const list = Command.make("list", { json: jsonOption }, ({ json }) =>
   Effect.gen(function* () {
     const project = yield* JavaProjectService;
     const classes = yield* project.findMainClasses;
+
+    if (json) {
+      yield* Console.log(JSON.stringify(classes));
+      return;
+    }
 
     if (classes.length === 0) {
       yield* Console.log("No main classes found");

@@ -15,10 +15,17 @@ export class JavaProjectService extends Context.Tag("JavaProject")<
   JavaProject
 >() {}
 
-const MAIN_METHOD_RE = /public\s+static\s+void\s+main\s*\(\s*String\s*(\[\s*]|\.\.\.)\s*\w+\s*\)/;
+const RG_MAIN_PATTERN = "public\\s+static\\s+void\\s+main\\s*\\(\\s*String";
+// Assumes POSIX (`/`) path separators. jrun is a Linux/WSL tool by design
+// (consistent with the `:` classpath separator and `/dev/stdout` in
+// resolveClasspath); native-Windows `\` paths are intentionally unsupported.
+const SOURCE_ROOT_RE = /src\/[^/]+\/java\/(.*\.java)$/;
 
-const fileToFqcn = (relativePath: string): string =>
-  relativePath.replace(/\.java$/, "").replaceAll("/", ".");
+const extractFqcn = (filePath: string): string | undefined => {
+  const match = filePath.match(SOURCE_ROOT_RE);
+  if (!match?.[1]) return undefined;
+  return match[1].replace(/\.java$/, "").replaceAll("/", ".");
+};
 
 export const JavaProjectLive = Layer.effect(
   JavaProjectService,
@@ -28,61 +35,36 @@ export const JavaProjectLive = Layer.effect(
     const root = yield* ProjectRoot;
     const executor = yield* CommandExecutor.CommandExecutor;
 
-    const walkJavaFiles = (dir: string): Effect.Effect<string[], PlatformError> =>
-      Effect.gen(function* () {
-        const entries = yield* fs.readDirectory(dir);
-        const results: string[] = [];
-        for (const entry of entries) {
-          const full = path.join(dir, entry);
-          const stat = yield* fs.stat(full);
-          if (stat.type === "Directory") {
-            const nested = yield* walkJavaFiles(full);
-            results.push(...nested);
-          } else if (entry.endsWith(".java")) {
-            results.push(full);
-          }
-        }
-        return results;
-      });
-
-    const findSrcMainJavaDirs = (dir: string): Effect.Effect<string[], PlatformError> =>
-      Effect.gen(function* () {
-        const srcMainJava = path.join(dir, "src", "main", "java");
-        const results: string[] = [];
-        if (yield* fs.exists(srcMainJava)) {
-          results.push(srcMainJava);
-        }
-        const entries = yield* fs.readDirectory(dir);
-        for (const entry of entries) {
-          if (entry === "src" || entry === "target" || entry.startsWith(".")) continue;
-          const full = path.join(dir, entry);
-          const stat = yield* fs.stat(full);
-          if (stat.type === "Directory") {
-            const nested = yield* findSrcMainJavaDirs(full);
-            results.push(...nested);
-          }
-        }
-        return results;
-      });
-
     const findMainClasses = Effect.gen(function* () {
-      const srcDirs = yield* findSrcMainJavaDirs(root);
-      if (srcDirs.length === 0) return [];
-
-      const mainClasses: string[] = [];
-      for (const srcDir of srcDirs) {
-        const javaFiles = yield* walkJavaFiles(srcDir);
-        for (const file of javaFiles) {
-          const content = yield* fs.readFileString(file);
-          if (MAIN_METHOD_RE.test(content)) {
-            const relative = path.relative(srcDir, file);
-            mainClasses.push(fileToFqcn(relative));
+      const stdout = yield* Command.make(
+        "rg",
+        "--files-with-matches",
+        "--glob",
+        "*.java",
+        "--glob",
+        "!**/target/**",
+        RG_MAIN_PATTERN,
+        root
+      ).pipe(
+        Command.string,
+        Effect.catchAll((e: PlatformError) => {
+          // A missing `rg` binary surfaces as SystemError/NotFound — fail loudly.
+          if (e._tag === "SystemError" && e.reason === "NotFound") {
+            return Effect.die(new Error("ripgrep (rg) is required but not found in PATH"));
           }
-        }
-      }
+          // rg exiting 1 (no matches) does NOT fail Command.string — it returns
+          // "" successfully — so this branch only sees real failures
+          // (permissions, stream errors). Re-propagate them.
+          return Effect.fail(e);
+        })
+      );
 
-      return mainClasses.sort();
-    });
+      const paths = stdout.trim().split("\n").filter(Boolean);
+      const classes = paths.map(extractFqcn).filter((c): c is string => c !== undefined);
+
+      // rg --files-with-matches emits each path once, so no dedup needed.
+      return classes.sort();
+    }).pipe(Effect.provideService(CommandExecutor.CommandExecutor, executor));
 
     const resolveClasspath = Effect.gen(function* () {
       const cacheFile = path.join(root, ".jrun-classpath-cache");
