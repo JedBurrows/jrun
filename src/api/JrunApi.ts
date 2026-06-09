@@ -1,4 +1,3 @@
-import { FileSystem } from "@effect/platform";
 import { Effect, Runtime } from "effect";
 import { ConfigStoreService, type RunConfig } from "../services/ConfigStore.js";
 import { JavaProjectService } from "../services/JavaProject.js";
@@ -42,9 +41,10 @@ export interface JrunApi {
   listMainClasses(): Promise<string[]>;
   listRunning(): Promise<ProcessRecord[]>;
   /**
-   * Returns the contents of a detached run's log file for `mainClass`, or `null`
-   * when the class isn't running detached / the log is unavailable (foreground
-   * run, missing or unreadable file).
+   * Returns the contents of the most-recent detached-run log for `mainClass` —
+   * whether the process is still running or has already exited — or `null` when
+   * no log file can be found or read (e.g. a foreground run, or the class was
+   * never started detached).
    */
   readLog(mainClass: string): Promise<string | null>;
   /**
@@ -56,11 +56,7 @@ export interface JrunApi {
   kill(mainClass: string): Promise<void>;
 }
 
-type Services =
-  | JavaProjectService
-  | ProcessManagerService
-  | ConfigStoreService
-  | FileSystem.FileSystem;
+type Services = JavaProjectService | ProcessManagerService | ConfigStoreService;
 
 export const makeJrunApi = (runtime: Runtime.Runtime<Services>): JrunApi => {
   const run = Runtime.runPromise(runtime);
@@ -122,13 +118,7 @@ export const makeJrunApi = (runtime: Runtime.Runtime<Services>): JrunApi => {
       run(
         Effect.gen(function* () {
           const pm = yield* ProcessManagerService;
-          const running = yield* pm.listRunning;
-          const record = running.find((r) => r.mainClass === mainClass);
-          if (!record || !record.logFile) return null;
-          const fs = yield* FileSystem.FileSystem;
-          return yield* fs
-            .readFileString(record.logFile)
-            .pipe(Effect.catchAll(() => Effect.succeed<string | null>(null)));
+          return yield* pm.readLog(mainClass);
         })
       ),
     start: (spec) =>

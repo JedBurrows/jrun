@@ -357,6 +357,53 @@ describe("ProcessManager", () => {
       expect(result).toBeInstanceOf(ProcessNotFound);
     }).pipe(Effect.provide(NodeContext.layer))
   );
+
+  it.effect("readLog returns the newest log for an exited class (post-exit scan)", () =>
+    Effect.gen(function* () {
+      const fs = yield* FileSystem.FileSystem;
+      const tmpDir = yield* fs.makeTempDirectory();
+      const pidDir = yield* fs.makeTempDirectory();
+      const crypto = require("node:crypto");
+      const hash = crypto.createHash("md5").update(tmpDir).digest("hex");
+
+      // makeTestLayer wires LogDir == pidDir, so write the log files there.
+      // Two runs of the same class with sortable ISO-ish timestamps; no live
+      // pid record exists, so readLog must fall back to scanning the log dir.
+      const cls = "com.example.Batch";
+      yield* fs.writeFileString(
+        `${pidDir}/${hash}-${cls}-2026-06-08T00-00-00-000Z.log`,
+        "OLD RUN\n"
+      );
+      yield* fs.writeFileString(
+        `${pidDir}/${hash}-${cls}-2026-06-09T00-00-00-000Z.log`,
+        "NEW RUN — Done.\n"
+      );
+
+      const layer = makeTestLayer(tmpDir, pidDir);
+      const log = yield* ProcessManagerService.pipe(
+        Effect.flatMap((pm) => pm.readLog(cls)),
+        Effect.provide(layer)
+      );
+
+      expect(log).toBe("NEW RUN — Done.\n");
+    }).pipe(Effect.provide(NodeContext.layer))
+  );
+
+  it.effect("readLog returns null when no log file matches the class", () =>
+    Effect.gen(function* () {
+      const fs = yield* FileSystem.FileSystem;
+      const tmpDir = yield* fs.makeTempDirectory();
+      const pidDir = yield* fs.makeTempDirectory();
+
+      const layer = makeTestLayer(tmpDir, pidDir);
+      const log = yield* ProcessManagerService.pipe(
+        Effect.flatMap((pm) => pm.readLog("com.example.NoLog")),
+        Effect.provide(layer)
+      );
+
+      expect(log).toBe(null);
+    }).pipe(Effect.provide(NodeContext.layer))
+  );
 });
 
 test("buildJavaArgs injects debug arg before user jvm opts and orders cp/main/args", () => {

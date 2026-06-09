@@ -43,6 +43,13 @@ export interface ProcessManager {
   readonly listRunning: Effect.Effect<ProcessRecord[], PlatformError>;
   readonly kill: (className: string) => Effect.Effect<void, ProcessNotFound | PlatformError>;
   readonly killByPid: (pid: number, group?: boolean) => Effect.Effect<void, PlatformError>;
+  /**
+   * Returns the contents of the most-recent log file for `mainClass`, whether
+   * the process is still running or has already exited. Returns `null` when no
+   * log file can be found or read (e.g. a foreground run, or the class has
+   * never been started detached).
+   */
+  readonly readLog: (mainClass: string) => Effect.Effect<string | null, PlatformError>;
 }
 
 export class ProcessManagerService extends Context.Tag("ProcessManager")<
@@ -353,6 +360,36 @@ export const ProcessManagerLive = Layer.effect(
         yield* fs.remove(pf).pipe(Effect.ignore);
       });
 
-    return { run, listRunning, kill, killByPid } as const;
+    const readLog = (mainClass: string) =>
+      Effect.gen(function* () {
+        // First check if the process is currently running and has a log file.
+        const running = yield* listRunning;
+        const record = running.find((r) => r.mainClass === mainClass);
+        if (record?.logFile) {
+          return yield* fs
+            .readFileString(record.logFile)
+            .pipe(Effect.catchAll(() => Effect.succeed<string | null>(null)));
+        }
+        // Process has exited (or was never started): scan the log dir for the
+        // most-recent (by start timestamp in the filename) log file whose name
+        // matches this project hash + class name.  This lets callers read the
+        // log of a batch job that already finished by the time they poll.
+        const prefix = `${hash}-${mainClass}-`;
+        const exists = yield* fs.exists(logDir);
+        if (!exists) return null;
+        const entries = yield* fs.readDirectory(logDir);
+        const matches = entries
+          .filter((e) => e.startsWith(prefix) && e.endsWith(".log"))
+          .sort()
+          .reverse(); // ISO timestamps sort lexicographically; newest last → reverse
+        const newest = matches[0];
+        if (!newest) return null;
+        const logFile = pathSvc.join(logDir, newest);
+        return yield* fs
+          .readFileString(logFile)
+          .pipe(Effect.catchAll(() => Effect.succeed<string | null>(null)));
+      });
+
+    return { run, listRunning, kill, killByPid, readLog } as const;
   })
 );
