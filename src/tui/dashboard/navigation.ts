@@ -18,12 +18,7 @@ const clampSel = (panel: Panel, idx: number, data: DashboardData): number => {
   return Math.min(Math.max(idx, 0), max);
 };
 
-const setSel = (
-  nav: NavState,
-  panel: Panel,
-  idx: number,
-  data: DashboardData,
-): NavState => ({
+const setSel = (nav: NavState, panel: Panel, idx: number, data: DashboardData): NavState => ({
   ...nav,
   selected: { ...nav.selected, [panel]: clampSel(panel, idx, data) },
 });
@@ -34,11 +29,7 @@ const setSel = (
  * returns `nav` unchanged. Selection is tracked per panel and clamped to that
  * panel's list length. Panel switching clamps at both ends (no wrap).
  */
-export const reduceNav = (
-  nav: NavState,
-  action: Action,
-  data: DashboardData,
-): NavState => {
+export const reduceNav = (nav: NavState, action: Action, data: DashboardData): NavState => {
   const cur = nav.selected[nav.focused];
   switch (action.type) {
     case "moveDown":
