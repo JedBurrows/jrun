@@ -2,16 +2,10 @@ import * as cp from "node:child_process";
 import * as os from "node:os";
 import * as path from "node:path";
 import { Args, Command, Options } from "@effect/cli";
-import type { FileSystem } from "@effect/platform";
 import { Console, Effect, Option } from "effect";
-import { render } from "ink";
-import React from "react";
-import { makeJrunApi } from "../api/JrunApi.js";
 import { ConfigStoreService } from "../services/ConfigStore.js";
-import type { JavaProjectService } from "../services/JavaProject.js";
-import type { ProcessManagerService } from "../services/ProcessManager.js";
 import { TerminalService } from "../services/Terminal.js";
-import { ConfigsTui } from "../tui/ConfigsTui.js";
+import { uiEffect } from "./ui.js";
 
 const nameArg = Args.text({ name: "name" });
 
@@ -148,43 +142,8 @@ const configsDelete = Command.make(
     })
 ).pipe(Command.withDescription("Delete a saved configuration"));
 
-// jrun configs (no subcommand) — launches the ink TUI
-const configsTui = Effect.gen(function* () {
-  const store = yield* ConfigStoreService;
-  const runtime = yield* Effect.runtime<
-    JavaProjectService | ProcessManagerService | ConfigStoreService | FileSystem.FileSystem
-  >();
-  const api = makeJrunApi(runtime);
-  const names = yield* store.list;
-
-  if (names.length === 0) {
-    yield* Console.log("No saved configurations. Use `jrun save <name> <class>` to create one.");
-    return;
-  }
-
-  const configMap: Record<string, import("../services/ConfigStore.js").RunConfig> = {};
-  for (const name of names) {
-    const config = yield* store.load(name);
-    configMap[name] = config;
-  }
-
-  yield* Effect.promise(() => {
-    const { waitUntilExit } = render(
-      React.createElement(ConfigsTui, {
-        configs: configMap,
-        onEdit: (name: string) => {
-          const configPath = path.join(os.homedir(), ".jrun", "configs", `${name}.json`);
-          const editor = process.env["EDITOR"] ?? "vi";
-          cp.spawnSync(editor, [configPath], { stdio: "inherit" });
-        },
-        onDelete: (name: string) => api.deleteConfig(name),
-      })
-    );
-    return waitUntilExit();
-  });
-});
-
-export const configs = Command.make("configs", {}, () => configsTui).pipe(
+// jrun configs (no subcommand) — launches the interactive dashboard
+export const configs = Command.make("configs", {}, () => uiEffect).pipe(
   Command.withSubcommands([configsList, configsShow, configsEdit, configsDelete]),
   Command.withDescription("Manage saved run configurations")
 );
