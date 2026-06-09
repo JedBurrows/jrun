@@ -134,4 +134,31 @@ describe.skipIf(!toolchainPresent)("example project (integration)", () => {
     }, 30_000);
     expect(exited).toBe(true);
   }, 60_000);
+
+  it("ApiServer runs until killed, then disappears from listRunning", async () => {
+    const cls = "com.example.ApiServer";
+    started.push(cls);
+    await api.start({ mainClass: cls, args: ["--port", "8099"], detached: true });
+
+    // Long-runner: it should appear in listRunning and log its banner.
+    const appeared = await pollUntil(async () => {
+      const running = await api.listRunning();
+      return running.some((r) => r.mainClass === cls);
+    }, 30_000);
+    expect(appeared).toBe(true);
+
+    const banner = await pollUntil(async () => {
+      const log = await api.readLog(cls);
+      return log?.includes("Server started") ?? false;
+    }, 30_000);
+    expect(banner).toBe(true);
+
+    await api.kill(cls);
+
+    const gone = await pollUntil(async () => {
+      const running = await api.listRunning();
+      return !running.some((r) => r.mainClass === cls);
+    }, 30_000);
+    expect(gone).toBe(true);
+  }, 60_000);
 });
