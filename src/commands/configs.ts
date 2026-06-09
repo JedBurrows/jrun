@@ -1,12 +1,14 @@
 import * as cp from "node:child_process";
-import * as nodefs from "node:fs/promises";
 import * as os from "node:os";
 import * as path from "node:path";
 import { Args, Command, Options } from "@effect/cli";
 import { Console, Effect, Option } from "effect";
 import { render } from "ink";
 import React from "react";
+import { makeJrunApi } from "../api/JrunApi.js";
 import { ConfigStoreService } from "../services/ConfigStore.js";
+import type { JavaProjectService } from "../services/JavaProject.js";
+import type { ProcessManagerService } from "../services/ProcessManager.js";
 import { TerminalService } from "../services/Terminal.js";
 import { ConfigsTui } from "../tui/ConfigsTui.js";
 
@@ -148,6 +150,10 @@ const configsDelete = Command.make(
 // jrun configs (no subcommand) — launches the ink TUI
 const configsTui = Effect.gen(function* () {
   const store = yield* ConfigStoreService;
+  const runtime = yield* Effect.runtime<
+    JavaProjectService | ProcessManagerService | ConfigStoreService
+  >();
+  const api = makeJrunApi(runtime);
   const names = yield* store.list;
 
   if (names.length === 0) {
@@ -170,10 +176,7 @@ const configsTui = Effect.gen(function* () {
           const editor = process.env["EDITOR"] ?? "vi";
           cp.spawnSync(editor, [configPath], { stdio: "inherit" });
         },
-        onDelete: async (name: string) => {
-          const configPath = path.join(os.homedir(), ".jrun", "configs", `${name}.json`);
-          await nodefs.unlink(configPath);
-        },
+        onDelete: (name: string) => api.deleteConfig(name),
       })
     );
     return waitUntilExit();
