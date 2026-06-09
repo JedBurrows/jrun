@@ -16,6 +16,7 @@ export class NoLastRun extends Data.TaggedError("NoLastRun")<{}> {}
 
 export interface ConfigStore {
   readonly save: (name: string, config: RunConfig) => Effect.Effect<void, PlatformError>;
+  readonly delete: (name: string) => Effect.Effect<void, PlatformError>;
   readonly load: (name: string) => Effect.Effect<RunConfig, ConfigNotFound | PlatformError>;
   readonly list: Effect.Effect<string[], PlatformError>;
   readonly saveLastRun: (config: RunConfig) => Effect.Effect<void, PlatformError>;
@@ -44,6 +45,8 @@ export const ConfigStoreLive = Layer.effect(
 
     const save = (name: string, config: RunConfig) =>
       fs.writeFileString(configPath(name), JSON.stringify(config, null, 2));
+
+    const del = (name: string) => fs.remove(configPath(name)).pipe(Effect.ignore);
 
     const load = (name: string) =>
       Effect.gen(function* () {
@@ -74,6 +77,6 @@ export const ConfigStoreLive = Layer.effect(
       return JSON.parse(content) as RunConfig;
     });
 
-    return { save, load, list, saveLastRun, loadLastRun } as const;
+    return { save, load, list, saveLastRun, loadLastRun, delete: del } as const;
   })
 );
