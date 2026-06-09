@@ -109,4 +109,29 @@ describe.skipIf(!toolchainPresent)("example project (integration)", () => {
       "com.example.HelloWorld",
     ]);
   });
+
+  it("DataProcessor runs detached, logs Done., then exits", async () => {
+    const cls = "com.example.DataProcessor";
+    started.push(cls);
+    const rec = await api.start({
+      mainClass: cls,
+      args: ["--count", "2", "--label", "order"],
+      detached: true,
+    });
+    expect(rec.pid).toBeGreaterThan(0);
+
+    // Log accrues as the JVM runs; wait for the completion marker.
+    const logged = await pollUntil(async () => {
+      const log = await api.readLog(cls);
+      return log?.includes("Done.") ?? false;
+    }, 30_000);
+    expect(logged).toBe(true);
+
+    // A batch job exits on its own; it should drop out of listRunning.
+    const exited = await pollUntil(async () => {
+      const running = await api.listRunning();
+      return !running.some((r) => r.mainClass === cls);
+    }, 30_000);
+    expect(exited).toBe(true);
+  }, 60_000);
 });
