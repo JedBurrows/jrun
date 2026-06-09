@@ -4,7 +4,9 @@ CLI tool for running and managing Java processes from the terminal. Built to sol
 
 ## Install globally
 
-npm i -g github:jedburrows/jrun
+mise use -g npm:@jed-dev/jrun   # mise also supplies Node; or: npm i -g @jed-dev/jrun
+
+Published to npm as `@jed-dev/jrun`. Requires Node.js >= 22.
 
 ## Quick reference
 
