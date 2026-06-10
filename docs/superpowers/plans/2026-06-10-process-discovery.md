@@ -76,22 +76,29 @@ all fail:
 - A shebang script *named* `java` → kernel runs it as `/bin/sh <script> …`, so
   `cmdline[0] = /bin/sh` (basename `sh`), which **fails `isJava`**.
 
-**Verified-working recipe** (argv[0] basename = `java`, marker present as a real token, process
-stays alive, and `-cp <Main>` is extractable):
-```bash
-# spawn this with cwd = <projectRoot>:
-bash -c "exec -a java sh -c 'while :; do sleep 1; done' _ -Djrun.project=<HASH> -cp x com.example.App"
+**Verified-working recipe — use Node's `argv0` option (devil's-advocate recipe (c), cleanest for
+vitest: no temp file, no shell quoting, deterministic):**
+```ts
+import * as cp from "node:child_process";
+const marker = projectMarker(hash); // = `-Djrun.project=${md5(root)}`, same helper the manager uses
+const child = cp.spawn(
+  "/bin/sh",
+  ["-c", "while :; do sleep 1; done", "_", marker, "-cp", "x", "com.example.App"],
+  { argv0: "java", cwd: root, stdio: "ignore" }
+);
+// /proc/<child.pid>/cmdline ≈ [java, -c, "while…", _, -Djrun.project=<hash>, -cp, x, com.example.App]
 ```
-Why it works: `exec -a java` forces argv[0]=`java`; everything after the `sh -c '<script>'` string
-(`_`, the marker, `-cp`, `x`, `com.example.App`) becomes **positional** params to the inline
-script, so `-D…`/`-cp` are NOT parsed as options. Resulting `/proc/<pid>/cmdline` ≈
-`[java, -c, "while :; do sleep 1; done", _, -Djrun.project=<HASH>, -cp, x, com.example.App]` →
-`isJava` ✓, owned by marker ✓, `extractMainClass` finds `-cp`→`com.example.App` ✓. Compute
-`<HASH>` as `md5(root)` exactly as the manager does (use the shared `projectMarker(hash)` helper to
-build the marker string). Assert the **live `ProcessProbeLive` + real `listRunning`** discovers the
-pid with `mainClass === "com.example.App"`. NOT gated on `mvn`/`java`/`rg`. Remember to kill the
-spawned process in an `afterEach`/`finally`. Also strengthen the live-probe smoke test to assert
-`pgid` and non-empty `argv`, not just `pid`/`cwd`.
+Why it works: Node's `argv0: "java"` sets the execve argv[0] so `/proc/cmdline[0]` basename is
+`java` (→ `isJava` ✓), while everything after the `-c '<script>'` string (`_` becomes `$0`, then
+`marker`, `-cp`, `x`, `com.example.App` are positional `$1..$4`) is NOT parsed as a shell option —
+so the `-Djrun.project=…` and `-cp` tokens land verbatim in argv. Owned by marker ✓,
+`extractMainClass` finds `-cp`→`com.example.App` ✓. Assert the **live `ProcessProbeLive` + real
+`listRunning`** returns `child.pid` with `mainClass === "com.example.App"`. NOT gated on
+`mvn`/`java`/`rg`. Kill the child in `afterEach`/`finally`. (Do NOT use a shebang script named
+`java` — the kernel execs the interpreter so `cmdline[0]` becomes `/bin/sh`/`/bin/bash` and
+`isJava` fails; and do NOT pass the marker to `sleep`/`tail`, which reject `-D…` as a bad option
+and die — both verified failing.) Also strengthen the live-probe smoke test to assert `pgid` and
+non-empty `argv`, not just `pid`/`cwd`.
 
 **R8 — Build-greenness policy (fixes the misleading per-task `typecheck` gates).** Removing
 `PidDir`/`kill(className)`/`detached` from `ProcessManager` breaks `main.ts`, `JrunApi`, and the
