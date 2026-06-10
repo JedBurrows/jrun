@@ -177,12 +177,17 @@ is swallowed.
 PID-primary, class as a convenience shortcut:
 
 - `jrun kill <pid>` / `jrun logs <pid>` — always unambiguous.
-- `jrun kill <class>` / `jrun logs <class>` — resolve when the class has **exactly one** running
-  instance. With multiple:
+- `jrun kill <class>` — resolves when the class has **exactly one** running instance. With
+  multiple:
   - **interactive:** present a picker (PID + startedAt) — reuse the existing `terminal.select`.
   - **`--json`:** `{ ok: false, error: "ambiguous", instances: [{ pid, startedAt }, …] }`,
     exit non-zero.
   - **non-json non-interactive:** print the instances and exit non-zero.
+- `jrun logs <class>` — prints the **newest** instance's log (latest start time); for `--follow`,
+  follows the first matching instance. `logs` is a read, not a destructive action, so it does
+  **not** prompt or emit an `ambiguous` error when a class has several instances — to target a
+  specific one, pass its PID (`jrun logs <pid>`). (This is a deliberate asymmetry with `kill`,
+  which is destructive and therefore must disambiguate.)
 - **PID-kill ownership guard.** `jrun kill <pid>` only signals a PID that discovery currently
   owns (a jrun-marked process). A PID that jrun did not launch is refused unless `--force` is
   passed — so `jrun kill 1234` can never SIGKILL an arbitrary unrelated process.
