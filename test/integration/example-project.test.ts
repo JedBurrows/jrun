@@ -161,6 +161,34 @@ describe.skipIf(!toolchainPresent)("example project (integration)", () => {
     expect(gone).toBe(true);
   }, 60_000);
 
+  it("tracks two instances of the same class and kills only one", async () => {
+    const cls = "com.example.ApiServer";
+    started.push(cls);
+    const a = await api.start({ mainClass: cls, args: ["--port", "8097"], detached: true });
+    const b = await api.start({ mainClass: cls, args: ["--port", "8098"], detached: true });
+    expect(a.pid).not.toBe(b.pid);
+
+    // Both appear as DISTINCT rows (the original bug: the 2nd clobbered the 1st).
+    const bothUp = await pollUntil(async () => {
+      const running = await api.listRunning();
+      const pids = running.filter((r) => r.mainClass === cls).map((r) => r.pid);
+      return pids.includes(a.pid) && pids.includes(b.pid);
+    }, 30_000);
+    expect(bothUp).toBe(true);
+
+    // Kill ONLY a.
+    await api.kill(a.pid);
+
+    // a disappears, b survives (the original bug: killing one killed all).
+    const aGone = await pollUntil(async () => {
+      const running = await api.listRunning();
+      return !running.some((r) => r.pid === a.pid);
+    }, 30_000);
+    expect(aGone).toBe(true);
+    const stillRunning = await api.listRunning();
+    expect(stillRunning.some((r) => r.pid === b.pid)).toBe(true);
+  }, 90_000);
+
   it("HelloWorld runs in the foreground and resolves on clean exit", async () => {
     const cls = "com.example.HelloWorld";
     // Foreground start blocks until the process exits; a clean exit (code 0)
