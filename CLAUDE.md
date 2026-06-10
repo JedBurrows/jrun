@@ -15,8 +15,8 @@ Run `jrun --help` for all commands. Key commands:
 - `jrun list` — find main classes in a Maven project (uses `rg`)
 - `jrun start <class>` — run a main class (tracks the PID). Flags: `--detached`/`-d` (background, logs to `~/.jrun/logs`), `--debug <port>` (enable JDWP; attach your IDE), `--debug-suspend`, `--json`
 - `jrun start <saved-name>` — run a saved configuration
-- `jrun logs <class> [--follow]` — print/stream a detached run's log
-- `jrun status` / `jrun kill` — manage running processes
+- `jrun logs <class|pid> [--follow]` — print/stream a detached run's log; a PID targets one specific instance (and an already-exited PID's log is still found)
+- `jrun status` / `jrun kill [<class|pid>]` — manage running processes. With multiple instances of a class, kill by PID (or pick interactively); a class with one instance still works by name. `jrun kill <pid>` only signals jrun-managed processes — pass `--force` to kill an unmanaged PID
 - `jrun save <name> <class> [args]` — save a run config
 - `jrun rerun` — repeat last run
 
@@ -33,4 +33,4 @@ Must be run from a Maven project directory (where pom.xml lives). Requires `ripg
 
 ## State
 
-All state lives in `~/.jrun/` (configs, PIDs, last-run).
+Persistent state in `~/.jrun/` is just configs, logs, and last-run — there is **no PID registry**. Running processes are discovered live from the OS process table (`/proc`): `jrun start` injects a `-Djrun.project=<md5(projectRoot)>` marker into the JVM, and `status`/`kill`/`logs` find jrun's processes by scanning for that marker. This makes tracking immune to desync — multiple instances of the same class, orphans, and out-of-band kills are all reflected accurately. Linux/WSL only (relies on `/proc`; a startup guard exits on other platforms).
