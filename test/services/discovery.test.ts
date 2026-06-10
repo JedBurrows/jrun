@@ -62,6 +62,11 @@ describe("extractMainClass (positional)", () => {
   test("returns null when no classpath flag is present", () => {
     expect(extractMainClass(["java", MARKER, "-c", "while :; do sleep 1; done"])).toBeNull();
   });
+  test("uses the LAST classpath flag — java last-wins semantics (H1)", () => {
+    expect(
+      extractMainClass(["java", MARKER, "-cp", "/extra", "-cp", "realcp", "com.example.Main"])
+    ).toBe("com.example.Main");
+  });
 });
 
 describe("extractDebugPort", () => {
@@ -84,17 +89,20 @@ describe("extractDebugPort", () => {
 describe("extractProgramArgs", () => {
   test("returns tokens after the main class", () => {
     expect(
-      extractProgramArgs(
-        ["java", "-cp", "x", "com.example.ApiServer", "--port", "8099"],
-        "com.example.ApiServer"
-      )
+      extractProgramArgs(["java", "-cp", "x", "com.example.ApiServer", "--port", "8099"])
     ).toEqual(["--port", "8099"]);
   });
-  test("slices at the FIRST occurrence when a program arg equals the class name", () => {
-    // The real main class always precedes program args; indexOf finds it first.
-    expect(extractProgramArgs(["java", "-cp", "x", "p.Main", "p.Main"], "p.Main")).toEqual([
-      "p.Main",
-    ]);
+  test("slices from the main-class INDEX even when a program arg equals the class name", () => {
+    // index 3 is the real main class; the trailing identical token is a program arg.
+    expect(extractProgramArgs(["java", "-cp", "x", "p.Main", "p.Main"])).toEqual(["p.Main"]);
+  });
+  test("slices from the real main-class index, not an earlier identical classpath token (H2)", () => {
+    expect(
+      extractProgramArgs(["java", MARKER, "-cp", "com.example.Main", "com.example.Main", "arg1"])
+    ).toEqual(["arg1"]);
+  });
+  test("empty when no classpath flag is present", () => {
+    expect(extractProgramArgs(["java", MARKER, "-c", "loop"])).toEqual([]);
   });
 });
 

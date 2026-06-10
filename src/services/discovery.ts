@@ -1,6 +1,6 @@
 import type { ProcessSnapshot } from "./ProcessProbe.js";
 
-/** A discovered process — a ProcessRecord minus the (derived) log path. */
+/** A discovered process — a ProcessRecord minus logFile, plus pgid. */
 export interface DiscoveredProcess {
   readonly pid: number;
   readonly pgid: number;
@@ -24,17 +24,28 @@ export const ownsProcess = (argv: readonly string[], marker: string): boolean =>
   argv.includes(marker);
 
 /**
+ * Index of the main-class argv element, or -1. Uses the LAST classpath flag to
+ * mirror java's last-wins semantics: if a jvmOpt before jrun's real `-cp` is
+ * itself `-cp` (`… -cp /extra -cp realcp Main`), java honors the last one, so we
+ * key off `<lastCpFlag> <classpath> <mainClass>`. Sole source of the position
+ * for both `extractMainClass` and `extractProgramArgs`.
+ */
+const mainClassIndex = (argv: readonly string[]): number => {
+  let cpIdx = -1;
+  for (let i = 0; i < argv.length; i++) if (CP_FLAGS.has(argv[i]!)) cpIdx = i; // last-wins
+  return cpIdx >= 0 && cpIdx + 2 < argv.length ? cpIdx + 2 : -1;
+};
+
+/**
  * Main class read positionally — ownership is already established by the marker,
- * so we just take the token after `-cp`/`-classpath`/`--class-path`. jrun always
- * emits `… -cp <classpath> <mainClass> <args…>`, and `/proc/cmdline` keeps the
- * classpath as ONE argv element even with spaces, so this is exact for jrun
- * launches. Returns null if no classpath flag is present.
+ * so we just take the token after the LAST `-cp`/`-classpath`/`--class-path`.
+ * jrun always emits `… -cp <classpath> <mainClass> <args…>`, and `/proc/cmdline`
+ * keeps the classpath as ONE argv element even with spaces, so this is exact for
+ * jrun launches. Returns null if no classpath flag is present.
  */
 export const extractMainClass = (argv: readonly string[]): string | null => {
-  for (let i = 0; i < argv.length; i++) {
-    if (CP_FLAGS.has(argv[i]!) && i + 2 < argv.length) return argv[i + 2]!;
-  }
-  return null;
+  const i = mainClassIndex(argv);
+  return i >= 0 ? argv[i]! : null;
 };
 
 /** Parse a JDWP debug port from `-agentlib:jdwp=…address=[host:]PORT`. */
@@ -47,10 +58,14 @@ export const extractDebugPort = (argv: readonly string[]): number | null => {
   return null;
 };
 
-/** Program args are everything after the main-class token (first occurrence). */
-export const extractProgramArgs = (argv: readonly string[], mainClass: string): string[] => {
-  const idx = argv.indexOf(mainClass);
-  return idx < 0 ? [] : argv.slice(idx + 1);
+/**
+ * Program args are everything after the main-class INDEX. Deriving the index
+ * (rather than `indexOf(mainClass)`) avoids slicing at an earlier identical
+ * token — e.g. a classpath value literally equal to the FQCN.
+ */
+export const extractProgramArgs = (argv: readonly string[]): string[] => {
+  const i = mainClassIndex(argv);
+  return i >= 0 ? argv.slice(i + 1) : [];
 };
 
 export interface MatchContext {
@@ -73,7 +88,7 @@ export const matchProcess = (
     pgid: snap.pgid,
     mainClass,
     startedAt: snap.startedAt,
-    args: extractProgramArgs(snap.argv, mainClass),
+    args: extractProgramArgs(snap.argv),
     debugPort: extractDebugPort(snap.argv),
   };
 };
