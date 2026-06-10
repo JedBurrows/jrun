@@ -13,6 +13,7 @@ import { start } from "./commands/start.js";
 import { status } from "./commands/status.js";
 import { ui, uiEffect } from "./commands/ui.js";
 
+import { createRequire } from "node:module";
 import * as os from "node:os";
 import * as path from "node:path";
 import { ConfigDir, ConfigStoreLive } from "./services/ConfigStore.js";
@@ -67,7 +68,12 @@ const AppLayer = Layer.mergeAll(
   TerminalLive
 );
 
-const cli = Command.run(jrun, { name: "jrun", version: "0.3.0" });
+// Read the version from package.json so it never drifts from the published
+// release. Resolves to the project-root package.json both when linked locally
+// (../package.json from dist/main.js) and when published (package.json ships
+// alongside dist/).
+const pkg = createRequire(import.meta.url)("../package.json") as { version: string };
+const cli = Command.run(jrun, { name: "jrun", version: pkg.version });
 
 cli(process.argv).pipe(
   Effect.provide(AppLayer),
