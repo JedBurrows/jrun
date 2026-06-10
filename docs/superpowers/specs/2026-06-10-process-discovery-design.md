@@ -110,10 +110,12 @@ Because ownership is already established by the marker, the main class is read p
 **positionally** for display: locate `-cp` / `-classpath` / `--class-path` in argv and take the
 token at `index + 2` (the classpath value is a single argv element even when it contains spaces,
 thanks to the NUL-split, so this is exact for every jrun-launched process — jrun always emits
-`… -cp <classpath> <mainClass> <args…>`). If no classpath flag is present, `mainClass` is the
-first token after the marker that is not an option (defensive; not expected for jrun launches).
-No intersection with a known-class set is required, so a missing/slow/failing `rg` can never
-break discovery.
+`… -cp <classpath> <mainClass> <args…>`). If no classpath flag is present, extraction yields
+`null` and `matchProcess` records the class as `(unknown)` — it **never drops a marked process**
+(that would reintroduce orphan-invisibility); the process stays visible in `status` and killable
+by PID, only its display label degrades. jrun always emits `-cp`, so this can't occur for owned
+processes. No intersection with a known-class set is required, so a missing/slow/failing `rg` can
+never break discovery.
 
 ### Reconstructed metadata (the `ProcessRecord`)
 

@@ -23,7 +23,7 @@ fully updated; tasks are dispatched with corrected text by the lead.
 owned iff its `/proc/<pid>/cmdline` argv contains that exact token. Consequences:
 - **Task 3 (discovery) is rewritten.** No known-class set, no `cwd` requirement, no `ConfigStore`.
   - `ownsProcess(argv, marker): boolean` — `argv.includes(marker)`.
-  - `extractMainClass(argv): string | null` — **positional only**: find `-cp`/`-classpath`/`--class-path`, return `argv[i+2]`; else the first non-`-`-prefixed token after the marker. (No known-set param.)
+  - `extractMainClass(argv): string | null` — **positional only**: find `-cp`/`-classpath`/`--class-path`, return `argv[i+2]`; else **`null`** (do NOT guess "first token after the marker" — that could grab a `-jar` value/`@argfile`/program arg and surface a garbage FQCN). jrun always emits `-cp`, so an owned process always extracts; when it doesn't, `matchProcess` records the class as `(unknown)` rather than dropping the process. (No known-set param.)
   - `matchProcess(snap, { marker }): DiscoveredProcess | null` — owns by marker, then extracts class/args/debugPort; `pid`/`pgid`/`startedAt` straight from the snapshot.
   - **DELETE** the planned test `extractMainClass(argv, new Set()) → "com.example.Unknown"` — it encoded a bug. **ADD** a test: an **unmarked** java snapshot with cwd=root and `-cp x com.example.ApiServer` → `matchProcess` returns `null` (the IntelliJ/Gradle false-positive must be excluded).
 - **Task 5 (listRunning) simplifies.** It no longer calls `project.findMainClasses`; it does NOT
