@@ -308,6 +308,18 @@ describe("Dashboard", () => {
     expect(frame).not.toContain("(nothing selected)");
   });
 
+  it("keeps the keybinding hints visible alongside a status message", async () => {
+    const api = mockApi();
+    const { stdin, lastFrame } = render(<Dashboard api={api} onExit={() => {}} />);
+    await flush();
+    stdin.write("s"); // start alpha -> sets "Started alpha" status
+    await flush();
+    const frame = lastFrame() ?? "";
+    expect(frame).toContain("Started alpha"); // the status toast
+    expect(frame).toContain("navigate"); // hint bar must remain visible
+    expect(frame).toContain("quit");
+  });
+
   it("surfaces an error from a failed action", async () => {
     const api = mockApi({ start: vi.fn().mockRejectedValue(new Error("boom")) });
     const { stdin, lastFrame } = render(<Dashboard api={api} onExit={() => {}} />);

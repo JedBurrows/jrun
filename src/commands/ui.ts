@@ -41,16 +41,32 @@ const runDashboardOnce = (api: JrunApi): Promise<DashboardIntent> => {
 const configFilePath = (name: string) =>
   path.join(os.homedir(), ".jrun", "configs", `${name}.json`);
 
+// Alternate screen buffer (the trick lazygit/vim use): on enter the terminal
+// swaps to a blank scratch screen; on leave it restores the prior contents and
+// cursor. Without this, the last rendered frame is left behind in scrollback on
+// quit. `1049` saves/restores the cursor as part of the switch.
+const ALT_SCREEN_ENTER = "\x1b[?1049h";
+const ALT_SCREEN_LEAVE = "\x1b[?1049l";
+
 // Loop: run dashboard; on {edit} spawn $EDITOR then re-render; on {quit} stop.
 const runDashboardLoop = async (api: JrunApi): Promise<void> => {
-  for (;;) {
-    const intent = await runDashboardOnce(api);
-    if (intent.type === "quit") return;
-    if (intent.type === "edit") {
-      const editor = process.env["EDITOR"] ?? "vi";
-      cp.spawnSync(editor, [configFilePath(intent.name)], { stdio: "inherit" });
-      // loop and re-render the dashboard (fresh data on next mount)
+  process.stdout.write(ALT_SCREEN_ENTER);
+  try {
+    for (;;) {
+      const intent = await runDashboardOnce(api);
+      if (intent.type === "quit") return;
+      if (intent.type === "edit") {
+        const editor = process.env["EDITOR"] ?? "vi";
+        // Drop back to the normal screen so the editor owns a clean terminal,
+        // then return to the alt screen to re-render the dashboard.
+        process.stdout.write(ALT_SCREEN_LEAVE);
+        cp.spawnSync(editor, [configFilePath(intent.name)], { stdio: "inherit" });
+        process.stdout.write(ALT_SCREEN_ENTER);
+      }
     }
+  } finally {
+    // Always restore the original screen, even if the dashboard throws.
+    process.stdout.write(ALT_SCREEN_LEAVE);
   }
 };
 

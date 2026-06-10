@@ -373,7 +373,16 @@ export function Dashboard({ api, onExit }: Props) {
       ) : mode === "prompt" ? (
         <TextPrompt label="Save as config name:" value={buffer} />
       ) : (
-        <StatusBar panel={nav.focused} message={message} isError={isError} />
+        // Keybindings stay pinned at the bottom (lazygit-style); the transient
+        // status note rides above them rather than replacing them.
+        <>
+          {message !== null && (
+            <Box paddingX={1}>
+              <Text color={isError ? "red" : "green"}>{message}</Text>
+            </Box>
+          )}
+          <StatusBar panel={nav.focused} message={null} />
+        </>
       )}
     </Box>
   );
