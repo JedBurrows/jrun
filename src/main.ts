@@ -16,6 +16,7 @@ import { ui, uiEffect } from "./commands/ui.js";
 import { createRequire } from "node:module";
 import * as os from "node:os";
 import * as path from "node:path";
+import { unsupportedPlatformMessage } from "./platform.js";
 import { ConfigDir, ConfigStoreLive } from "./services/ConfigStore.js";
 import { JavaProjectLive, ProjectRoot } from "./services/JavaProject.js";
 import { LogDir, PidDir, ProcessManagerLive } from "./services/ProcessManager.js";
@@ -34,6 +35,12 @@ const rootHandler = Effect.gen(function* () {
 const jrun = Command.make("jrun", {}, () => rootHandler).pipe(
   Command.withSubcommands([build, list, start, save, rerun, status, kill, configs, logs, ui])
 );
+
+const platformError = unsupportedPlatformMessage(process.platform);
+if (platformError !== null) {
+  console.error(platformError);
+  process.exit(1);
+}
 
 const cwd = process.cwd();
 const jrunHome = path.join(os.homedir(), ".jrun");
