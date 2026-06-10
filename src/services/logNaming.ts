@@ -45,5 +45,15 @@ export const pickLogByPid = (
 ): string | null => {
   const prefix = `${hash}-`;
   const suffix = `-${pid}.log`;
-  return newest(files.filter((f) => f.startsWith(prefix) && f.endsWith(suffix)));
+  const matches = files.filter((f) => f.startsWith(prefix) && f.endsWith(suffix));
+  if (matches.length === 0) return null;
+  // filename = <hash>-<class>-<stamp>-<pid>.log ; a Java FQCN has no '-', so the
+  // stamp is everything after the first '-' in the <class>-<stamp> middle part.
+  // Sort by STAMP (not the whole filename, which would sort by class first).
+  const stampOf = (f: string): string => {
+    const mid = f.slice(prefix.length, f.length - suffix.length); // <class>-<stamp>
+    const dash = mid.indexOf("-");
+    return dash < 0 ? mid : mid.slice(dash + 1);
+  };
+  return matches.reduce((best, f) => (stampOf(f) > stampOf(best) ? f : best));
 };

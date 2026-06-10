@@ -114,13 +114,6 @@ export const ProcessManagerLive = Layer.effect(
       return exists ? yield* fs.readDirectory(logDir) : [];
     });
 
-    const deriveLogFile = (mainClass: string, pid: number) =>
-      Effect.gen(function* () {
-        const entries = yield* listLogNames;
-        const name = pickRunningLog(entries, hash, mainClass, pid);
-        return name ? pathSvc.join(logDir, name) : null;
-      });
-
     const run = (config: RunConfig, options: RunOptions = {}) =>
       Effect.gen(function* () {
         const classpath = yield* project.resolveClasspath(config.mainClass);
@@ -171,8 +164,15 @@ export const ProcessManagerLive = Layer.effect(
                 debugPort: debug ? debug.port : null,
               };
             },
-            catch: (e) =>
-              new JavaProcessError({ message: `Failed to start detached: ${String(e)}` }),
+            catch: (e) => {
+              // Best-effort cleanup so a failed start leaves no orphan .tmp.
+              try {
+                nodeFs.unlinkSync(tmpLog);
+              } catch {
+                /* nothing to clean */
+              }
+              return new JavaProcessError({ message: `Failed to start detached: ${String(e)}` });
+            },
           });
           return record;
         }
@@ -207,16 +207,21 @@ export const ProcessManagerLive = Layer.effect(
 
     const listRunning = Effect.gen(function* () {
       const snaps = yield* probe.listJava;
+      // Read the log dir ONCE; a log-dir hiccup must NOT hide discovered
+      // processes — degrade logFile→null instead of failing the whole listing.
+      const logNames = yield* listLogNames.pipe(
+        Effect.catchAll(() => Effect.succeed([] as string[]))
+      );
       const records: ProcessRecord[] = [];
       for (const snap of snaps) {
         const d = matchProcess(snap, { marker });
         if (!d) continue;
-        const logFile = yield* deriveLogFile(d.mainClass, d.pid);
+        const name = pickRunningLog(logNames, hash, d.mainClass, d.pid);
         records.push({
           pid: d.pid,
           mainClass: d.mainClass,
           startedAt: d.startedAt,
-          logFile,
+          logFile: name ? pathSvc.join(logDir, name) : null,
           args: d.args,
           debugPort: d.debugPort,
         });
@@ -250,9 +255,14 @@ export const ProcessManagerLive = Layer.effect(
         const group = snap === null ? true : snap.pgid === pid;
         yield* Effect.sync(() => sendSignal(pid, "SIGTERM", group));
         yield* Effect.sleep("2 seconds");
-        yield* Effect.sync(() => {
-          if (isProcessRunning(pid)) sendSignal(pid, "SIGKILL", group);
-        });
+        if (!isProcessRunning(pid)) return;
+        // Re-observe before the hard kill — the pid may have been reused in the
+        // 2s window. Recompute group from a FRESH snapshot, defaulting to a
+        // single signal when unknown, so a recycled pid never gets its whole
+        // group nuked.
+        const snap2 = yield* probe.inspect(pid);
+        const group2 = snap2 !== null && snap2.pgid === pid;
+        yield* Effect.sync(() => sendSignal(pid, "SIGKILL", group2));
       });
 
     const readFileOrNull = (file: string): Effect.Effect<string | null, PlatformError> =>

@@ -72,4 +72,13 @@ describe("pickLogByPid (class-agnostic, exited PID)", () => {
   test("returns null when no file matches the pid", () => {
     expect(pickLogByPid(files, "abc", 12345)).toBeNull();
   });
+  test("pickLogByPid picks the NEWEST by timestamp across classes (not by class name)", () => {
+    const crossClass = [
+      "abc-com.example.Zebra-2026-01-01T00-00-00-000Z-5.log", // OLD
+      "abc-com.example.Apple-2026-06-10T00-00-00-000Z-5.log", // RECENT
+    ];
+    expect(pickLogByPid(crossClass, "abc", 5)).toBe(
+      "abc-com.example.Apple-2026-06-10T00-00-00-000Z-5.log"
+    );
+  });
 });
