@@ -4,11 +4,79 @@
 
 **Goal:** Replace jrun's per-class PID-file registry with pure OS process discovery, so multiple instances of the same main class are tracked correctly, orphans are visible, and jrun can never desync from reality.
 
-**Architecture:** A new `ProcessProbe` service abstracts the Linux `/proc` filesystem behind an injectable seam. A pure `discovery` module turns process snapshots into `ProcessRecord`s by matching `cwd == projectRoot` AND a known main-class token. `ProcessManager.listRunning` becomes a probe-driven scan with zero persisted state; logs are located by globbing PID-encoded filenames. Kill targets a PID and signals its process group only when the PID is its own group leader.
+**Architecture:** A new `ProcessProbe` service abstracts the Linux `/proc` filesystem behind an injectable seam. jrun injects a self-identifying marker (`-Djrun.project=<hash>`) into every JVM it launches; a pure `discovery` module owns a process iff its `/proc` argv carries that marker (see v2 Revisions). `ProcessManager.listRunning` becomes a probe-driven scan with zero persisted state and **no `rg` dependency**; logs are located by globbing PID-encoded filenames. Kill targets a PID and signals its process group, defaulting to the group signal when `/proc` can't be read.
 
 **Tech Stack:** TypeScript, Effect (`@effect/platform` FileSystem/Path/Command, Context.Tag services, Layer), Ink/React TUI, Vitest + `@effect/vitest`.
 
 **Reference spec:** `docs/superpowers/specs/2026-06-10-process-discovery-design.md`
+
+---
+
+## ⚠️ v2 Revisions (post-adversarial-review) — READ FIRST, these OVERRIDE the task bodies below
+
+The architect + devil's-advocate review changed the core matching strategy and several details.
+Where a task body below conflicts with this section, **this section wins**. The reference spec is
+fully updated; tasks are dispatched with corrected text by the lead.
+
+**R1 — Ownership is a self-identifying marker, NOT cwd+class.** `buildJavaArgs` prepends
+`-Djrun.project=<projectHash>` (md5 of project root — same hash used for log names). A process is
+owned iff its `/proc/<pid>/cmdline` argv contains that exact token. Consequences:
+- **Task 3 (discovery) is rewritten.** No known-class set, no `cwd` requirement, no `ConfigStore`.
+  - `ownsProcess(argv, marker): boolean` — `argv.includes(marker)`.
+  - `extractMainClass(argv): string | null` — **positional only**: find `-cp`/`-classpath`/`--class-path`, return `argv[i+2]`; else the first non-`-`-prefixed token after the marker. (No known-set param.)
+  - `matchProcess(snap, { marker }): DiscoveredProcess | null` — owns by marker, then extracts class/args/debugPort; `pid`/`pgid`/`startedAt` straight from the snapshot.
+  - **DELETE** the planned test `extractMainClass(argv, new Set()) → "com.example.Unknown"` — it encoded a bug. **ADD** a test: an **unmarked** java snapshot with cwd=root and `-cp x com.example.ApiServer` → `matchProcess` returns `null` (the IntelliJ/Gradle false-positive must be excluded).
+- **Task 5 (listRunning) simplifies.** It no longer calls `project.findMainClasses`; it does NOT
+  depend on `rg`/`ConfigStore`. `const marker = "-Djrun.project=" + hash;` then `probe.listJava` →
+  `matchProcess(snap, { marker })` → derive `logFile`. Drop the `stubProject`-for-discovery wiring
+  and the `Effect.catchAll(()=>[])` known-set guard (no longer relevant). `run`'s tests still need
+  a `stubProject` because `run` calls `resolveClasspath`.
+
+**R2 — `buildJavaArgs` marker (folded into Task 6, do FIRST within it).** Prepend the marker to
+the returned args. Update the two `buildJavaArgs` unit tests' expected arrays to include
+`-Djrun.project=<hash>` as the first element. (The test must compute the same md5 hash from the
+project root the layer uses — expose the marker or hash if needed for assertion.)
+
+**R3 — Kill defaults to GROUP signal when `/proc` read fails (Task 7).**
+`const group = snap === null ? true : snap.pgid === pid;` — never downgrade to single-PID on a
+read race (would strand detached children + bound ports). Add a test: `inspect` returns `null` →
+group signal used.
+
+**R4 — `run` rename is best-effort (Task 6).** Once `child.pid` exists, NEVER fail `run`. Wrap
+the `renameSync` in its own try/catch INSIDE the success path; on failure keep the `.tmp` path as
+`logFile` and return the record. The outer `Effect.try` catch only covers pre-spawn setup + spawn.
+
+**R5 — `kill <pid>` ownership guard (Task 10).** Add a `--force` boolean option. `resolveKillTarget`
+for a numeric arg returns `{ kind: "pid", pid, owned: running.some(r => r.pid === pid) }`. In the
+command: if `!owned && !force` → refuse with a clear message / `{ok:false,error:"unowned pid; use --force"}` and exit 1. Update the resolver test accordingly (drop "untracked PID still resolves" as unconditional).
+
+**R6 — `logs <pid>` resolves exited PIDs + TUI logs by PID (Tasks 11, 12).**
+- Task 8: add `readLogByPidAnyClass(pid)` that globs `<hash>-*-<pid>.log` (class-agnostic) for the
+  finished-PID case; `logs <pid>` uses it when the PID isn't in `listRunning`.
+- Task 12: the dashboard log action must call `api.readLogByPid(rec.mainClass, rec.pid)` (NOT the
+  newest-by-class `readLog`), so selecting one of two same-class rows shows that instance's log.
+
+**R7 — Mandatory real-`/proc` test, un-gated (Task 14 or its own file).** Spawn a fake `java`
+shell script (`#!/bin/bash\nexec -a java sleep 30` … ensure argv[0] basename is `java`; simplest:
+a script named `java` on a temp dir, invoked so `/proc/<pid>/cmdline[0]` ends in `/java`) WITH the
+marker arg and `cwd=root`, then assert the **live `ProcessProbeLive` + real `listRunning`**
+discovers it. This must NOT be gated on `mvn`/`java`/`rg`. Strengthen the live probe smoke test to
+assert `pgid` and non-empty `argv`, not just `pid`/`cwd`.
+
+**R8 — Build-greenness policy (fixes the misleading per-task `typecheck` gates).** Removing
+`PidDir`/`kill(className)`/`detached` from `ProcessManager` breaks `main.ts`, `JrunApi`, and the
+CLI until they're rewired. To avoid stranding an implementer on unrelated red:
+- **Tasks 1–4** are additive → each ends with the FULL gate: `pnpm typecheck && pnpm build && pnpm test:run`.
+- **Tasks 5–12 are ONE coordinated red window.** During it, verify with **targeted** `pnpm test:run <file>` only (NOT project `typecheck`). The lead dispatches these as a tight sequence and the implementer for each is told which stale references are expected.
+- **Task 13 (main.ts rewire) is the GREEN GATE:** it must end with `pnpm typecheck && pnpm build && pnpm lint && pnpm test:run` ALL green, project-wide. Nothing proceeds to Task 14 until then.
+- Alternatively (lead's discretion) collapse Tasks 5–13 into one larger atomic commit if an
+  implementer struggles with the red window — but the green gate at the end is non-negotiable.
+
+**R9 — `ProcessRecord` keeps no `pgid`; `detached` removed.** (Unchanged from plan; spec updated to match — don't "fix" `pgid` back onto the record.) `status --json` shape losing `detached` is an accepted contract change.
+
+**Dissolved by R1 (do NOT implement):** the saved-config∪rg known-set union, `ConfigStore`
+injection into `ProcessManager`, the `findMainClasses` defect/`catchAll` handling in `listRunning`,
+and the per-invocation known-set cache — none are needed once ownership is the marker.
 
 ---
 
