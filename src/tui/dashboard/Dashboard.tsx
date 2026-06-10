@@ -32,6 +32,7 @@ interface Pending {
 
 interface LogState {
   mainClass: string;
+  pid: number;
   text: string | null;
 }
 
@@ -137,13 +138,13 @@ export function Dashboard({ api, onExit }: Props) {
   );
 
   const openLogs = useCallback(
-    async (mainClass: string) => {
+    async (mainClass: string, pid: number) => {
       setBusy(true);
       try {
-        const text = await api.readLog(mainClass);
+        const text = await api.readLogByPid(mainClass, pid);
         if (!mounted.current) return;
         note(null); // clear any stale error before showing the log pane
-        setLog({ mainClass, text: text ?? "(no log available)" });
+        setLog({ mainClass, pid, text: text ?? "(no log available)" });
         setMode("logs");
       } catch (err) {
         note(errMsg(err), true);
@@ -157,8 +158,9 @@ export function Dashboard({ api, onExit }: Props) {
   const reloadLogs = useCallback(async () => {
     if (!log) return;
     try {
-      const text = await api.readLog(log.mainClass);
-      if (mounted.current) setLog({ mainClass: log.mainClass, text: text ?? "(no log available)" });
+      const text = await api.readLogByPid(log.mainClass, log.pid);
+      if (mounted.current)
+        setLog({ mainClass: log.mainClass, pid: log.pid, text: text ?? "(no log available)" });
     } catch (err) {
       note(errMsg(err), true);
     }
@@ -201,13 +203,13 @@ export function Dashboard({ api, onExit }: Props) {
           const rec = d.running[nav.selected.running];
           if (!rec) return;
           if (action.type === "primary") {
-            void openLogs(rec.mainClass);
+            void openLogs(rec.mainClass, rec.pid);
           } else if (action.type === "kill") {
             setPending({
               verb: "kill",
-              target: rec.mainClass,
-              done: `Killed ${rec.mainClass}`,
-              run: () => api.kill(rec.mainClass),
+              target: `${rec.mainClass} (PID ${rec.pid})`,
+              done: `Killed ${rec.mainClass} (PID ${rec.pid})`,
+              run: () => api.kill(rec.pid),
             });
             setMode("confirm");
           }
