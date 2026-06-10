@@ -33,9 +33,21 @@ owned iff its `/proc/<pid>/cmdline` argv contains that exact token. Consequences
   a `stubProject` because `run` calls `resolveClasspath`.
 
 **R2 — `buildJavaArgs` marker (folded into Task 6, do FIRST within it).** Prepend the marker to
-the returned args. Update the two `buildJavaArgs` unit tests' expected arrays to include
-`-Djrun.project=<hash>` as the first element. (The test must compute the same md5 hash from the
-project root the layer uses — expose the marker or hash if needed for assertion.)
+the returned args. **Single source of truth (architect):** the token `-Djrun.project=` is on BOTH
+sides of an equality check (spawn side in `buildJavaArgs`; discovery side in `matchProcess`/
+`listRunning`). Define it ONCE and import it in both, so a future edit can't silently break
+ownership:
+```ts
+// in discovery.ts (or a shared module both import)
+export const projectMarker = (hash: string): string => `-Djrun.project=${hash}`;
+```
+`buildJavaArgs`'s current signature is `(config, classpath, debug)` — it has neither root nor
+hash. Thread the hash (or the prebuilt marker string) in as a new parameter, and have
+`run`/`ProcessManager` pass `projectHash(root)`. `discovery.matchProcess({ marker })` receives
+`projectMarker(hash)`. **Add a round-trip test:** `buildJavaArgs(...)` output contains
+`projectMarker(hash)` AND `ownsProcess(thatOutput, projectMarker(hash))` is true — this is the
+only test that catches the two literals drifting apart. Update the two existing `buildJavaArgs`
+unit tests' expected arrays to include the marker as the first element.
 
 **R3 — Kill defaults to GROUP signal when `/proc` read fails (Task 7).**
 `const group = snap === null ? true : snap.pgid === pid;` — never downgrade to single-PID on a
@@ -56,12 +68,16 @@ command: if `!owned && !force` → refuse with a clear message / `{ok:false,erro
 - Task 12: the dashboard log action must call `api.readLogByPid(rec.mainClass, rec.pid)` (NOT the
   newest-by-class `readLog`), so selecting one of two same-class rows shows that instance's log.
 
-**R7 — Mandatory real-`/proc` test, un-gated (Task 14 or its own file).** Spawn a fake `java`
-shell script (`#!/bin/bash\nexec -a java sleep 30` … ensure argv[0] basename is `java`; simplest:
-a script named `java` on a temp dir, invoked so `/proc/<pid>/cmdline[0]` ends in `/java`) WITH the
-marker arg and `cwd=root`, then assert the **live `ProcessProbeLive` + real `listRunning`**
-discovers it. This must NOT be gated on `mvn`/`java`/`rg`. Strengthen the live probe smoke test to
-assert `pgid` and non-empty `argv`, not just `pid`/`cwd`.
+**R7 — Mandatory real-`/proc` test, un-gated (Task 14 or its own file).** **Use the script-named-
+`java` approach — NOT `exec -a java` (architect):** `exec -a java sleep 30` replaces argv with
+`["java","30"]`, dropping the marker, so the test would be vacuous. Instead write an executable
+file literally named `java` in a temp dir (`#!/bin/bash\nsleep 30\n`, `chmod +x`), then invoke it
+as `<tmpdir>/java -Djrun.project=<hash> -cp x com.example.App` with `cwd = root`. That makes
+`/proc/<pid>/cmdline[0]` basename `java` AND keeps `-Djrun.project=<hash>` as a real argv element.
+Assert the **live `ProcessProbeLive` + real `listRunning`** discovers it (matches by marker,
+extracts `com.example.App`). This must NOT be gated on `mvn`/`java`/`rg`. Strengthen the live
+probe smoke test to assert `pgid` and non-empty `argv`, not just `pid`/`cwd`. (Compute `<hash>`
+as `md5(root)` exactly as the manager does.)
 
 **R8 — Build-greenness policy (fixes the misleading per-task `typecheck` gates).** Removing
 `PidDir`/`kill(className)`/`detached` from `ProcessManager` breaks `main.ts`, `JrunApi`, and the
@@ -69,6 +85,14 @@ CLI until they're rewired. To avoid stranding an implementer on unrelated red:
 - **Tasks 1–4** are additive → each ends with the FULL gate: `pnpm typecheck && pnpm build && pnpm test:run`.
 - **Tasks 5–12 are ONE coordinated red window.** During it, verify with **targeted** `pnpm test:run <file>` only (NOT project `typecheck`). The lead dispatches these as a tight sequence and the implementer for each is told which stale references are expected.
 - **Task 13 (main.ts rewire) is the GREEN GATE:** it must end with `pnpm typecheck && pnpm build && pnpm lint && pnpm test:run` ALL green, project-wide. Nothing proceeds to Task 14 until then.
+- **Green-gate off-by-one fix (architect):** `test/integration/example-project.test.ts` is a member
+  of project `tsc --noEmit` but isn't migrated until T14 — it still imports `PidDir`, asserts
+  `rec.detached`, and calls `api.kill(cls)`, all of which break the moment T5/T9 remove those
+  symbols. So **T13 must also migrate the integration harness's breaking references** (drop
+  `PidDir`/`PidDirLayer`, add `Layer.provide(ProcessProbeLive)`, change `rec.detached` assertion →
+  `rec.logFile === null`, change `api.kill(cls)` in `afterEach` → kill by discovered `rec.pid`)
+  so the project typecheck is green. T14 then ONLY adds the new two-instance regression test and
+  the real-`/proc` discovery test — it introduces no new compile breakage.
 - Alternatively (lead's discretion) collapse Tasks 5–13 into one larger atomic commit if an
   implementer struggles with the red window — but the green gate at the end is non-negotiable.
 
