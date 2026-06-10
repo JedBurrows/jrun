@@ -19,7 +19,8 @@ import * as path from "node:path";
 import { unsupportedPlatformMessage } from "./platform.js";
 import { ConfigDir, ConfigStoreLive } from "./services/ConfigStore.js";
 import { JavaProjectLive, ProjectRoot } from "./services/JavaProject.js";
-import { LogDir, PidDir, ProcessManagerLive } from "./services/ProcessManager.js";
+import { LogDir, ProcessManagerLive } from "./services/ProcessManager.js";
+import { ProcessProbeLive } from "./services/ProcessProbe.js";
 import { TerminalLive } from "./services/Terminal.js";
 
 // Bare `jrun`: launch the dashboard on an interactive terminal; otherwise print
@@ -47,7 +48,6 @@ const jrunHome = path.join(os.homedir(), ".jrun");
 
 const ProjectRootLayer = Layer.succeed(ProjectRoot, cwd);
 const ConfigDirLayer = Layer.succeed(ConfigDir, jrunHome);
-const PidDirLayer = Layer.succeed(PidDir, path.join(jrunHome, "pids"));
 const LogDirLayer = Layer.succeed(LogDir, path.join(jrunHome, "logs"));
 
 const JavaProjectLayer = JavaProjectLive.pipe(
@@ -63,8 +63,8 @@ const ConfigStoreLayer = ConfigStoreLive.pipe(
 const ProcessManagerLayer = ProcessManagerLive.pipe(
   Layer.provide(JavaProjectLayer),
   Layer.provide(ProjectRootLayer),
-  Layer.provide(PidDirLayer),
   Layer.provide(LogDirLayer),
+  Layer.provide(ProcessProbeLive),
   Layer.provide(NodeContext.layer)
 );
 

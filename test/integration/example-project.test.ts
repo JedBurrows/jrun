@@ -9,7 +9,8 @@ import { afterAll, afterEach, beforeAll, describe, expect, it } from "vitest";
 import { type JrunApi, makeJrunApi } from "../../src/api/JrunApi.js";
 import { ConfigDir, ConfigStoreLive } from "../../src/services/ConfigStore.js";
 import { JavaProjectLive, ProjectRoot } from "../../src/services/JavaProject.js";
-import { LogDir, PidDir, ProcessManagerLive } from "../../src/services/ProcessManager.js";
+import { LogDir, ProcessManagerLive } from "../../src/services/ProcessManager.js";
+import { ProcessProbeLive } from "../../src/services/ProcessProbe.js";
 
 // example/ lives at the repo root, two levels up from test/integration/.
 const exampleRoot = path.resolve(fileURLToPath(import.meta.url), "../../../example");
@@ -57,13 +58,11 @@ describe.skipIf(!toolchainPresent)("example project (integration)", () => {
 
     stateRoot = fs.mkdtempSync(path.join(os.tmpdir(), "jrun-example-it-"));
     const configDir = path.join(stateRoot, "config");
-    const pidDir = path.join(stateRoot, "pids");
     const logDir = path.join(stateRoot, "logs");
-    for (const d of [configDir, pidDir, logDir]) fs.mkdirSync(d, { recursive: true });
+    for (const d of [configDir, logDir]) fs.mkdirSync(d, { recursive: true });
 
     const ProjectRootLayer = Layer.succeed(ProjectRoot, exampleRoot);
     const ConfigDirLayer = Layer.succeed(ConfigDir, configDir);
-    const PidDirLayer = Layer.succeed(PidDir, pidDir);
     const LogDirLayer = Layer.succeed(LogDir, logDir);
 
     const javaProjectLayer = JavaProjectLive.pipe(
@@ -77,8 +76,8 @@ describe.skipIf(!toolchainPresent)("example project (integration)", () => {
     const processManagerLayer = ProcessManagerLive.pipe(
       Layer.provide(javaProjectLayer),
       Layer.provide(ProjectRootLayer),
-      Layer.provide(PidDirLayer),
       Layer.provide(LogDirLayer),
+      Layer.provide(ProcessProbeLive),
       Layer.provide(NodeContext.layer)
     );
 
@@ -89,11 +88,9 @@ describe.skipIf(!toolchainPresent)("example project (integration)", () => {
   }, 120_000); // mvn compile can be slow on a cold cache
 
   afterEach(async () => {
-    // Best-effort: kill anything a scenario left running. kill() swallows
-    // ProcessNotFound, so already-exited classes are harmless.
-    for (const cls of started.splice(0)) {
-      await api.kill(cls).catch(() => {});
-    }
+    const running = await api.listRunning().catch(() => []);
+    for (const r of running) await api.kill(r.pid).catch(() => {});
+    started.splice(0);
   });
 
   afterAll(async () => {
@@ -153,7 +150,9 @@ describe.skipIf(!toolchainPresent)("example project (integration)", () => {
     }, 30_000);
     expect(banner).toBe(true);
 
-    await api.kill(cls);
+    const target = (await api.listRunning()).find((r) => r.mainClass === cls);
+    expect(target).toBeDefined();
+    if (target) await api.kill(target.pid);
 
     const gone = await pollUntil(async () => {
       const running = await api.listRunning();
@@ -168,6 +167,6 @@ describe.skipIf(!toolchainPresent)("example project (integration)", () => {
     // resolves, a non-zero exit rejects with JavaProcessError.
     const rec = await api.start({ mainClass: cls, args: ["Alice"], detached: false });
     expect(rec.mainClass).toBe(cls);
-    expect(rec.detached).toBe(false);
+    expect(rec.logFile).toBeNull();
   }, 60_000);
 });
