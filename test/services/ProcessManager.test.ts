@@ -218,7 +218,7 @@ describe("ProcessManager", () => {
       // spawn behavior is what's under test, not classpath resolution.
       const stubJavaProject = Layer.succeed(JavaProjectService, {
         findMainClasses: Effect.succeed([] as string[]),
-        resolveClasspath: Effect.succeed("target/classes"),
+        resolveClasspath: () => Effect.succeed("target/classes"),
       });
       const layer = ProcessManagerLive.pipe(
         Layer.provide(stubJavaProject),
@@ -277,7 +277,7 @@ describe("ProcessManager", () => {
       const javaBinLayer = Layer.succeed(JavaBin, fakeJava);
       const stubJavaProject = Layer.succeed(JavaProjectService, {
         findMainClasses: Effect.succeed([] as string[]),
-        resolveClasspath: Effect.succeed("target/classes"),
+        resolveClasspath: () => Effect.succeed("target/classes"),
       });
       const layer = ProcessManagerLive.pipe(
         Layer.provide(stubJavaProject),

@@ -187,7 +187,7 @@ export const ProcessManagerLive = Layer.effect(
      */
     const run = (config: RunConfig, options: RunOptions = {}) =>
       Effect.gen(function* () {
-        const classpath = yield* project.resolveClasspath;
+        const classpath = yield* project.resolveClasspath(config.mainClass);
         const debug = options.debug ?? null;
         const args = buildJavaArgs(config, classpath, debug);
         const startedAt = new Date().toISOString();
