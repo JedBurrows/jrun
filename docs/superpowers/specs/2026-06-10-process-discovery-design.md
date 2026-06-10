@@ -243,7 +243,7 @@ unsupported platforms is not worth the per-command branching.
   the `pidDir` reaping) is **deleted**. `run` injects the marker (via `buildJavaArgs`) and adopts
   the best-effort temp-then-rename log flow. `PidDir` tag and its wiring are removed. **No
   `ConfigStore` / `rg` dependency is added.**
-- **`buildJavaArgs`** — prepends `-Djrun.project=<projectHash>` to the JVM args.
+- **`run`** — prepends `projectMarker(projectHash)` to the JVM args (`const args = [marker, ...buildJavaArgs(...)]`), a single chokepoint feeding BOTH the detached spawn and the foreground `Command.make`. `buildJavaArgs` itself stays pure (no hash param). The marker round-trip is pinned by a test that spawns a fake `java` dumping its argv and asserts the injected marker equals `projectMarker(md5(root))` — the same token discovery matches.
 - **`ProcessRecord`** — drop `detached`. `pgid` is **not** stored on the record; it is re-observed
   via `probe.inspect` at kill time (observed-not-stored).
 - **`discovery`** — pure: `ownsProcess(argv, marker)`, `extractMainClass(argv)` (positional),
