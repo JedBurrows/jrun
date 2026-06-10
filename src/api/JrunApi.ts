@@ -53,7 +53,18 @@ export interface JrunApi {
    * that wants to await the whole run.
    */
   start(spec: StartSpec): Promise<ProcessRecord>;
-  kill(mainClass: string): Promise<void>;
+  kill(pid: number): Promise<void>;
+  /**
+   * Returns the contents of the detached-run log for `mainClass` at exactly
+   * `pid` — preferring a still-running match — or `null` when no such log file
+   * can be found or read.
+   */
+  readLogByPid(mainClass: string, pid: number): Promise<string | null>;
+  /**
+   * Returns the contents of the detached-run log for `pid` regardless of class,
+   * or `null` when no log file for that pid can be found or read.
+   */
+  readLogByPidAnyClass(pid: number): Promise<string | null>;
 }
 
 type Services = JavaProjectService | ProcessManagerService | ConfigStoreService;
@@ -151,13 +162,27 @@ export const makeJrunApi = (runtime: Runtime.Runtime<Services>): JrunApi => {
           });
         })
       ),
-    // kill swallows ProcessNotFound: the dashboard kills a row it believes is
-    // running; a race where it already exited should not reject.
-    kill: (mainClass) =>
+    // killByPid is best-effort: the dashboard kills a row it believes is
+    // running; a race where it already exited resolves without rejecting.
+    kill: (pid) =>
       run(
         Effect.gen(function* () {
           const s = yield* ProcessManagerService;
-          yield* s.kill(mainClass).pipe(Effect.catchTag("ProcessNotFound", () => Effect.void));
+          yield* s.killByPid(pid);
+        })
+      ),
+    readLogByPid: (mainClass, pid) =>
+      run(
+        Effect.gen(function* () {
+          const pm = yield* ProcessManagerService;
+          return yield* pm.readLogByPid(mainClass, pid);
+        })
+      ),
+    readLogByPidAnyClass: (pid) =>
+      run(
+        Effect.gen(function* () {
+          const pm = yield* ProcessManagerService;
+          return yield* pm.readLogByPidAnyClass(pid);
         })
       ),
   };

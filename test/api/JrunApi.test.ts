@@ -1,3 +1,4 @@
+import * as crypto from "node:crypto";
 import * as fs from "node:fs";
 import * as os from "node:os";
 import * as path from "node:path";
@@ -12,7 +13,15 @@ import {
   type RunConfig,
 } from "../../src/services/ConfigStore.js";
 import { JavaProjectLive, ProjectRoot } from "../../src/services/JavaProject.js";
-import { LogDir, PidDir, ProcessManagerLive } from "../../src/services/ProcessManager.js";
+import { LogDir, ProcessManagerLive } from "../../src/services/ProcessManager.js";
+import { ProcessProbeService, type ProcessSnapshot } from "../../src/services/ProcessProbe.js";
+
+// Discovery is stubbed: this suite never spawns, so listRunning sees nothing and
+// killByPid inspects nothing — keeping the shared runtime deterministic.
+const stubProbe = Layer.succeed(ProcessProbeService, {
+  listJava: Effect.succeed([] as ProcessSnapshot[]),
+  inspect: () => Effect.succeed<ProcessSnapshot | null>(null),
+});
 
 describe("JrunApi", () => {
   // biome-ignore lint/suspicious/noExplicitAny: test-only runtime handle
@@ -24,16 +33,13 @@ describe("JrunApi", () => {
     tmpRoot = fs.mkdtempSync(path.join(os.tmpdir(), "jrun-api-test-"));
     const configDir = path.join(tmpRoot, "config");
     const projectRoot = path.join(tmpRoot, "project");
-    const pidDir = path.join(tmpRoot, "pids");
     const logDir = path.join(tmpRoot, "logs");
     fs.mkdirSync(configDir, { recursive: true });
     fs.mkdirSync(projectRoot, { recursive: true });
-    fs.mkdirSync(pidDir, { recursive: true });
     fs.mkdirSync(logDir, { recursive: true });
 
     const ProjectRootLayer = Layer.succeed(ProjectRoot, projectRoot);
     const ConfigDirLayer = Layer.succeed(ConfigDir, configDir);
-    const PidDirLayer = Layer.succeed(PidDir, pidDir);
     const LogDirLayer = Layer.succeed(LogDir, logDir);
 
     const javaProjectLayer = JavaProjectLive.pipe(
@@ -49,8 +55,8 @@ describe("JrunApi", () => {
     const processManagerLayer = ProcessManagerLive.pipe(
       Layer.provide(javaProjectLayer),
       Layer.provide(ProjectRootLayer),
-      Layer.provide(PidDirLayer),
       Layer.provide(LogDirLayer),
+      Layer.provide(stubProbe),
       Layer.provide(NodeContext.layer)
     );
 
@@ -106,12 +112,34 @@ describe("JrunApi", () => {
     await expect(api.start({})).rejects.toThrow(/mainClass or configName/);
   });
 
-  it("kill of a never-started class resolves (swallows ProcessNotFound)", async () => {
-    await expect(api.kill("com.example.NeverStarted")).resolves.toBeUndefined();
+  it("kill of an unknown pid resolves (killByPid is best-effort)", async () => {
+    // A pid above pid_max can never name a live process or group, so this is a
+    // safe no-op: killByPid signals nothing and resolves.
+    await expect(api.kill(2_147_483_647)).resolves.toBeUndefined();
   });
 
   it("readLog returns null when the class is not running", async () => {
     await expect(api.readLog("com.example.NotRunning")).resolves.toBeNull();
+  });
+
+  it("readLogByPid returns the log for an exact class+pid", async () => {
+    const hash = crypto.createHash("md5").update(path.join(tmpRoot, "project")).digest("hex");
+    fs.writeFileSync(
+      path.join(tmpRoot, "logs", `${hash}-com.example.Logged-2026-06-09T00-00-00-000Z-777.log`),
+      "BYPID\n"
+    );
+    expect(await api.readLogByPid("com.example.Logged", 777)).toBe("BYPID\n");
+    expect(await api.readLogByPid("com.example.Logged", 778)).toBeNull();
+  });
+
+  it("readLogByPidAnyClass returns the log for a pid regardless of class", async () => {
+    const hash = crypto.createHash("md5").update(path.join(tmpRoot, "project")).digest("hex");
+    fs.writeFileSync(
+      path.join(tmpRoot, "logs", `${hash}-com.example.Whatever-2026-06-09T00-00-00-000Z-888.log`),
+      "ANYCLASS\n"
+    );
+    expect(await api.readLogByPidAnyClass(888)).toBe("ANYCLASS\n");
+    expect(await api.readLogByPidAnyClass(889)).toBeNull();
   });
 
   it("loadLastRun returns null when nothing has been run", async () => {
