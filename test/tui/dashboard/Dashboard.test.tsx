@@ -16,7 +16,6 @@ const RECORD = {
   logFile: null,
   args: [],
   debugPort: null,
-  detached: true,
 };
 
 const stubApi = (): JrunApi => ({
@@ -34,12 +33,13 @@ const stubApi = (): JrunApi => ({
       logFile: null,
       args: [],
       debugPort: 5005,
-      detached: true,
     },
   ],
   start: async () => RECORD,
   kill: async () => {},
   readLog: async () => "log output",
+  readLogByPid: async () => "log output",
+  readLogByPidAnyClass: async () => null,
 });
 
 // Build a stub from vi.fn() mocks so calls can be asserted. Defaults match the
@@ -60,12 +60,13 @@ const mockApi = (overrides: Partial<Record<keyof JrunApi, unknown>> = {}) => {
         logFile: null,
         args: [],
         debugPort: 5005,
-        detached: true,
       },
     ]),
     start: vi.fn().mockResolvedValue(RECORD),
     kill: vi.fn().mockResolvedValue(undefined),
     readLog: vi.fn().mockResolvedValue("log output"),
+    readLogByPid: vi.fn().mockResolvedValue("log output"),
+    readLogByPidAnyClass: vi.fn().mockResolvedValue(null),
     ...overrides,
   };
   return api as unknown as JrunApi & Record<keyof JrunApi, ReturnType<typeof vi.fn>>;
@@ -222,7 +223,7 @@ describe("Dashboard", () => {
     await flush();
     stdin.write("y");
     await flush();
-    expect(api.kill).toHaveBeenCalledWith("com.x.Server");
+    expect(api.kill).toHaveBeenCalledWith(4321);
   });
 
   it("opens and closes the log view from running", async () => {
@@ -233,7 +234,7 @@ describe("Dashboard", () => {
     await flush();
     stdin.write("\r"); // Enter
     await flush();
-    expect(api.readLog).toHaveBeenCalledWith("com.x.Server");
+    expect(api.readLogByPid).toHaveBeenCalledWith("com.x.Server", 4321);
     expect(lastFrame() ?? "").toContain("Logs: com.x.Server");
     expect(lastFrame() ?? "").toContain("log output");
     stdin.write("q");

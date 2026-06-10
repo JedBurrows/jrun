@@ -12,7 +12,6 @@ const data: DashboardData = {
       logFile: null,
       args: [],
       debugPort: null,
-      detached: true,
     },
   ],
   mainClasses: ["com.A", "com.B"],

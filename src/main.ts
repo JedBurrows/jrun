@@ -13,11 +13,14 @@ import { start } from "./commands/start.js";
 import { status } from "./commands/status.js";
 import { ui, uiEffect } from "./commands/ui.js";
 
+import { createRequire } from "node:module";
 import * as os from "node:os";
 import * as path from "node:path";
+import { unsupportedPlatformMessage } from "./platform.js";
 import { ConfigDir, ConfigStoreLive } from "./services/ConfigStore.js";
 import { JavaProjectLive, ProjectRoot } from "./services/JavaProject.js";
-import { LogDir, PidDir, ProcessManagerLive } from "./services/ProcessManager.js";
+import { LogDir, ProcessManagerLive } from "./services/ProcessManager.js";
+import { ProcessProbeLive } from "./services/ProcessProbe.js";
 import { TerminalLive } from "./services/Terminal.js";
 
 // Bare `jrun`: launch the dashboard on an interactive terminal; otherwise print
@@ -34,12 +37,17 @@ const jrun = Command.make("jrun", {}, () => rootHandler).pipe(
   Command.withSubcommands([build, list, start, save, rerun, status, kill, configs, logs, ui])
 );
 
+const platformError = unsupportedPlatformMessage(process.platform);
+if (platformError !== null) {
+  console.error(platformError);
+  process.exit(1);
+}
+
 const cwd = process.cwd();
 const jrunHome = path.join(os.homedir(), ".jrun");
 
 const ProjectRootLayer = Layer.succeed(ProjectRoot, cwd);
 const ConfigDirLayer = Layer.succeed(ConfigDir, jrunHome);
-const PidDirLayer = Layer.succeed(PidDir, path.join(jrunHome, "pids"));
 const LogDirLayer = Layer.succeed(LogDir, path.join(jrunHome, "logs"));
 
 const JavaProjectLayer = JavaProjectLive.pipe(
@@ -55,8 +63,8 @@ const ConfigStoreLayer = ConfigStoreLive.pipe(
 const ProcessManagerLayer = ProcessManagerLive.pipe(
   Layer.provide(JavaProjectLayer),
   Layer.provide(ProjectRootLayer),
-  Layer.provide(PidDirLayer),
   Layer.provide(LogDirLayer),
+  Layer.provide(ProcessProbeLive),
   Layer.provide(NodeContext.layer)
 );
 
@@ -67,7 +75,12 @@ const AppLayer = Layer.mergeAll(
   TerminalLive
 );
 
-const cli = Command.run(jrun, { name: "jrun", version: "0.3.0" });
+// Read the version from package.json so it never drifts from the published
+// release. Resolves to the project-root package.json both when linked locally
+// (../package.json from dist/main.js) and when published (package.json ships
+// alongside dist/).
+const pkg = createRequire(import.meta.url)("../package.json") as { version: string };
+const cli = Command.run(jrun, { name: "jrun", version: pkg.version });
 
 cli(process.argv).pipe(
   Effect.provide(AppLayer),
