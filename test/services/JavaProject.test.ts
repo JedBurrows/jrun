@@ -1,7 +1,9 @@
+import * as nodeFs from "node:fs";
+import * as os from "node:os";
 import { FileSystem } from "@effect/platform";
 import { NodeContext } from "@effect/platform-node";
 import { it } from "@effect/vitest";
-import { Effect, Layer } from "effect";
+import { Effect, Exit, Layer } from "effect";
 import { describe, expect } from "vitest";
 import {
   JavaProjectLive,
@@ -172,6 +174,39 @@ public class Util {
   );
 });
 
+// Installs a fake `mvn` on PATH whose body is `script`. Returns a restore fn
+// that must be called to undo the PATH mutation. Consistent with these tests
+// relying on a real `rg` from PATH.
+const installFakeMvn = (script: string): (() => void) => {
+  const binDir = nodeFs.mkdtempSync(`${os.tmpdir()}/jrun-fakebin-`);
+  nodeFs.writeFileSync(`${binDir}/mvn`, script, { mode: 0o755 });
+  const prevPath = process.env.PATH;
+  process.env.PATH = `${binDir}:${prevPath ?? ""}`;
+  return () => {
+    process.env.PATH = prevPath;
+  };
+};
+
+// A fake mvn that writes `cp` to the -Dmdep.outputFile target and exits 0.
+const fakeMvnWriting = (cp: string) => `#!/bin/sh
+out=""
+for a in "$@"; do
+  case "$a" in -Dmdep.outputFile=*) out="\${a#-Dmdep.outputFile=}";; esac
+done
+printf '%s' "${cp}" > "$out"
+`;
+
+const resolveWith = (root: string, mainClass: string) =>
+  JavaProjectService.pipe(
+    Effect.flatMap((p) => p.resolveClasspath(mainClass)),
+    Effect.provide(
+      JavaProjectLive.pipe(
+        Layer.provide(Layer.succeed(ProjectRoot, root)),
+        Layer.provide(NodeContext.layer)
+      )
+    )
+  );
+
 describe("JavaProject.resolveClasspath", () => {
   it.effect("uses the classpath cache when it is newer than pom.xml", () =>
     Effect.gen(function* () {
@@ -180,19 +215,83 @@ describe("JavaProject.resolveClasspath", () => {
       yield* fs.writeFileString(`${root}/pom.xml`, "<project/>");
       yield* fs.writeFileString(`${root}/.jrun-classpath-cache`, "dep1.jar:dep2.jar");
       const future = new Date(Date.now() + 60_000);
-      yield* Effect.sync(() =>
-        require("node:fs").utimesSync(`${root}/.jrun-classpath-cache`, future, future)
+      yield* Effect.sync(() => nodeFs.utimesSync(`${root}/.jrun-classpath-cache`, future, future));
+
+      const cp = yield* resolveWith(root, "com.example.App");
+      expect(cp).toBe("target/classes:dep1.jar:dep2.jar");
+    }).pipe(Effect.provide(NodeContext.layer))
+  );
+
+  it.effect("reads the classpath from the build-classpath output file", () =>
+    Effect.gen(function* () {
+      const fs = yield* FileSystem.FileSystem;
+      const root = yield* fs.makeTempDirectory();
+      yield* fs.writeFileString(`${root}/pom.xml`, "<project/>");
+      const restore = yield* Effect.sync(() => installFakeMvn(fakeMvnWriting("a.jar:b.jar")));
+
+      const cp = yield* resolveWith(root, "com.example.App").pipe(
+        Effect.ensuring(Effect.sync(restore))
       );
 
-      const layer = JavaProjectLive.pipe(
-        Layer.provide(Layer.succeed(ProjectRoot, root)),
-        Layer.provide(NodeContext.layer)
+      expect(cp).toBe("target/classes:a.jar:b.jar");
+      const cached = yield* fs.readFileString(`${root}/.jrun-classpath-cache`);
+      expect(cached.trim()).toBe("a.jar:b.jar");
+    }).pipe(Effect.provide(NodeContext.layer))
+  );
+
+  it.effect("fails and does not cache when build-classpath exits non-zero", () =>
+    Effect.gen(function* () {
+      const fs = yield* FileSystem.FileSystem;
+      const root = yield* fs.makeTempDirectory();
+      yield* fs.writeFileString(`${root}/pom.xml`, "<project/>");
+      const restore = yield* Effect.sync(() =>
+        installFakeMvn(`#!/bin/sh
+echo "[ERROR] Failed to execute goal org.apache.maven.plugins:maven-dependency-plugin"
+exit 1
+`)
       );
-      const cp = yield* JavaProjectService.pipe(
-        Effect.flatMap((p) => p.resolveClasspath),
-        Effect.provide(layer)
+
+      const exit = yield* resolveWith(root, "com.example.App").pipe(
+        Effect.ensuring(Effect.sync(restore)),
+        Effect.exit
       );
-      expect(cp).toBe("target/classes:dep1.jar:dep2.jar");
+
+      expect(Exit.isFailure(exit)).toBe(true);
+      const cacheExists = yield* fs.exists(`${root}/.jrun-classpath-cache`);
+      expect(cacheExists).toBe(false);
+    }).pipe(Effect.provide(NodeContext.layer))
+  );
+
+  it.effect("resolves the owning submodule's target/classes in a multi-module project", () =>
+    Effect.gen(function* () {
+      const fs = yield* FileSystem.FileSystem;
+      const root = yield* fs.makeTempDirectory();
+      yield* fs.writeFileString(`${root}/pom.xml`, "<project/>");
+      yield* fs.makeDirectory(`${root}/module-a/src/main/java/com/example`, {
+        recursive: true,
+      });
+      yield* fs.writeFileString(`${root}/module-a/pom.xml`, "<project/>");
+      yield* fs.writeFileString(
+        `${root}/module-a/src/main/java/com/example/ServiceA.java`,
+        `public class ServiceA { public static void main(String[] args) {} }`
+      );
+      // The fake mvn echoes its own working directory as the dependency, so the
+      // assertion proves build-classpath ran in the submodule, not the root.
+      const restore = yield* Effect.sync(() =>
+        installFakeMvn(`#!/bin/sh
+out=""
+for a in "$@"; do
+  case "$a" in -Dmdep.outputFile=*) out="\${a#-Dmdep.outputFile=}";; esac
+done
+printf '%s' "$PWD" > "$out"
+`)
+      );
+
+      const cp = yield* resolveWith(root, "com.example.ServiceA").pipe(
+        Effect.ensuring(Effect.sync(restore))
+      );
+
+      expect(cp).toBe(`module-a/target/classes:${root}/module-a`);
     }).pipe(Effect.provide(NodeContext.layer))
   );
 });
