@@ -75,6 +75,23 @@ the process in `/proc/<pid>/cmdline`. It is the **single source of ownership tru
 One-time caveat: processes started by a *pre-upgrade* jrun lack the marker and won't be
 discovered after upgrade; they must be killed manually (a one-time migration cost).
 
+**Assumptions & known limitations** (verified by adversarial review against a real JVM/`/proc`):
+
+- **`javaBin` must `exec` the JVM, not `spawn` it.** `run` records `child.pid` for the log
+  filename and `start --json`. This is correct only if `child.pid` *is* the marked JVM — true for
+  `exec`-style launchers (`/usr/bin/java`, and the user's `mise` shim, both verified to keep the
+  same pid with the marker intact in `cmdline`). A wrapper that *forks* the real JVM as a child
+  would leave `child.pid` pointing at the wrapper; discovery (marker-based) still finds the real
+  JVM at its own pid via `status`, but the `start`-returned pid/`logFile` would be off and
+  `kill <that-pid>` would hit the ownership guard. Documented assumption, not mitigated.
+- **Marker-only ownership has no `cwd` check** (the marker embeds the project hash, so it's
+  project-scoped). On a *shared multi-user host* with world-readable `/proc`, user B working at the
+  *identical* absolute project path computes the same marker and would see user A's marked JVMs in
+  `status` (`kill` then EPERMs harmlessly). Single-user dev use — jrun's purpose — is unaffected.
+- The marker is an argv token, not an env var, so app-forked child JVMs do **not** inherit it
+  (correct — we don't want to claim them). The only exception is an app that deliberately
+  relaunches itself by copying its own argv; rare and out of scope.
+
 ### Discovery: identifying "our" processes
 
 - Enumerate `/proc/<pid>` for numeric PIDs. A java process is one whose `cmdline`'s argv[0]

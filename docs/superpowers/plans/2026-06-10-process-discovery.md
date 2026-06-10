@@ -68,16 +68,30 @@ command: if `!owned && !force` → refuse with a clear message / `{ok:false,erro
 - Task 12: the dashboard log action must call `api.readLogByPid(rec.mainClass, rec.pid)` (NOT the
   newest-by-class `readLog`), so selecting one of two same-class rows shows that instance's log.
 
-**R7 — Mandatory real-`/proc` test, un-gated (Task 14 or its own file).** **Use the script-named-
-`java` approach — NOT `exec -a java` (architect):** `exec -a java sleep 30` replaces argv with
-`["java","30"]`, dropping the marker, so the test would be vacuous. Instead write an executable
-file literally named `java` in a temp dir (`#!/bin/bash\nsleep 30\n`, `chmod +x`), then invoke it
-as `<tmpdir>/java -Djrun.project=<hash> -cp x com.example.App` with `cwd = root`. That makes
-`/proc/<pid>/cmdline[0]` basename `java` AND keeps `-Djrun.project=<hash>` as a real argv element.
-Assert the **live `ProcessProbeLive` + real `listRunning`** discovers it (matches by marker,
-extracts `com.example.App`). This must NOT be gated on `mvn`/`java`/`rg`. Strengthen the live
-probe smoke test to assert `pgid` and non-empty `argv`, not just `pid`/`cwd`. (Compute `<hash>`
-as `md5(root)` exactly as the manager does.)
+**R7 — Mandatory real-`/proc` test, un-gated (Task 14 or its own file). USE THE EMPIRICALLY-
+VERIFIED RECIPE BELOW** — the devil's advocate *ran* the alternatives on a real `/proc` and they
+all fail:
+- `exec -a java sleep 30 <marker>` → `sleep` rejects `-Djrun.project=…` (`invalid option 'D'`) and
+  dies instantly. Same for `tail`/most coreutils.
+- A shebang script *named* `java` → kernel runs it as `/bin/sh <script> …`, so
+  `cmdline[0] = /bin/sh` (basename `sh`), which **fails `isJava`**.
+
+**Verified-working recipe** (argv[0] basename = `java`, marker present as a real token, process
+stays alive, and `-cp <Main>` is extractable):
+```bash
+# spawn this with cwd = <projectRoot>:
+bash -c "exec -a java sh -c 'while :; do sleep 1; done' _ -Djrun.project=<HASH> -cp x com.example.App"
+```
+Why it works: `exec -a java` forces argv[0]=`java`; everything after the `sh -c '<script>'` string
+(`_`, the marker, `-cp`, `x`, `com.example.App`) becomes **positional** params to the inline
+script, so `-D…`/`-cp` are NOT parsed as options. Resulting `/proc/<pid>/cmdline` ≈
+`[java, -c, "while :; do sleep 1; done", _, -Djrun.project=<HASH>, -cp, x, com.example.App]` →
+`isJava` ✓, owned by marker ✓, `extractMainClass` finds `-cp`→`com.example.App` ✓. Compute
+`<HASH>` as `md5(root)` exactly as the manager does (use the shared `projectMarker(hash)` helper to
+build the marker string). Assert the **live `ProcessProbeLive` + real `listRunning`** discovers the
+pid with `mainClass === "com.example.App"`. NOT gated on `mvn`/`java`/`rg`. Remember to kill the
+spawned process in an `afterEach`/`finally`. Also strengthen the live-probe smoke test to assert
+`pgid` and non-empty `argv`, not just `pid`/`cwd`.
 
 **R8 — Build-greenness policy (fixes the misleading per-task `typecheck` gates).** Removing
 `PidDir`/`kill(className)`/`detached` from `ProcessManager` breaks `main.ts`, `JrunApi`, and the
