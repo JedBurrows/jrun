@@ -162,6 +162,8 @@ describe("Dashboard", () => {
     const api = mockApi();
     const { stdin } = render(<Dashboard api={api} onExit={() => {}} />);
     await flush();
+    stdin.write("3"); // focus configs
+    await flush();
     const callsBefore = api.listConfigs.mock.calls.length;
     stdin.write("s");
     await flush();
@@ -172,6 +174,8 @@ describe("Dashboard", () => {
   it("starts a config in debug on S", async () => {
     const api = mockApi();
     const { stdin } = render(<Dashboard api={api} onExit={() => {}} />);
+    await flush();
+    stdin.write("3"); // focus configs
     await flush();
     stdin.write("S");
     await flush();
@@ -185,6 +189,8 @@ describe("Dashboard", () => {
     const api = mockApi();
     const { stdin } = render(<Dashboard api={api} onExit={() => {}} />);
     await flush();
+    stdin.write("3"); // focus configs
+    await flush();
     stdin.write("d");
     await flush();
     stdin.write("y");
@@ -195,6 +201,8 @@ describe("Dashboard", () => {
   it("does not delete a config when cancelling with n", async () => {
     const api = mockApi();
     const { stdin } = render(<Dashboard api={api} onExit={() => {}} />);
+    await flush();
+    stdin.write("3"); // focus configs
     await flush();
     stdin.write("d");
     await flush();
@@ -208,6 +216,8 @@ describe("Dashboard", () => {
     const onExit = vi.fn();
     const { stdin } = render(<Dashboard api={api} onExit={onExit} />);
     await flush();
+    stdin.write("3"); // focus configs
+    await flush();
     stdin.write("e");
     await flush();
     expect(onExit).toHaveBeenCalledWith({ type: "edit", name: "alpha" });
@@ -217,7 +227,7 @@ describe("Dashboard", () => {
     const api = mockApi();
     const { stdin } = render(<Dashboard api={api} onExit={() => {}} />);
     await flush();
-    stdin.write("2"); // focus running
+    stdin.write("1"); // focus running
     await flush();
     stdin.write("x");
     await flush();
@@ -230,7 +240,7 @@ describe("Dashboard", () => {
     const api = mockApi();
     const { stdin, lastFrame } = render(<Dashboard api={api} onExit={() => {}} />);
     await flush();
-    stdin.write("2"); // focus running
+    stdin.write("1"); // focus running
     await flush();
     stdin.write("\r"); // Enter
     await flush();
@@ -246,7 +256,7 @@ describe("Dashboard", () => {
     const api = mockApi();
     const { stdin } = render(<Dashboard api={api} onExit={() => {}} />);
     await flush();
-    stdin.write("3"); // focus mainClasses
+    stdin.write("2"); // focus mainClasses
     await flush();
     stdin.write("w");
     await flush();
@@ -266,7 +276,7 @@ describe("Dashboard", () => {
     const onExit = vi.fn();
     const { stdin } = render(<Dashboard api={api} onExit={onExit} />);
     await flush();
-    stdin.write("3"); // focus mainClasses
+    stdin.write("2"); // focus mainClasses
     await flush();
     stdin.write("w");
     await flush();
@@ -294,6 +304,8 @@ describe("Dashboard", () => {
     const api = mockApi({ listConfigs, loadConfig });
     const { stdin, lastFrame } = render(<Dashboard api={api} onExit={() => {}} />);
     await flush();
+    stdin.write("3"); // focus configs
+    await flush();
     stdin.write("G"); // jump to the last config (index 2 = "c")
     await flush();
     expect(lastFrame() ?? "").toContain("mainClass: com.x.c");
@@ -313,6 +325,8 @@ describe("Dashboard", () => {
     const api = mockApi();
     const { stdin, lastFrame } = render(<Dashboard api={api} onExit={() => {}} />);
     await flush();
+    stdin.write("3"); // focus configs
+    await flush();
     stdin.write("s"); // start alpha -> sets "Started alpha" status
     await flush();
     const frame = lastFrame() ?? "";
@@ -324,6 +338,8 @@ describe("Dashboard", () => {
   it("surfaces an error from a failed action", async () => {
     const api = mockApi({ start: vi.fn().mockRejectedValue(new Error("boom")) });
     const { stdin, lastFrame } = render(<Dashboard api={api} onExit={() => {}} />);
+    await flush();
+    stdin.write("3"); // focus configs
     await flush();
     stdin.write("s");
     await flush();

@@ -2,7 +2,7 @@ import type { RunConfig } from "../../services/ConfigStore.js";
 import type { ProcessRecord } from "../../services/ProcessManager.js";
 
 export type Panel = "configs" | "running" | "mainClasses";
-export const PANELS: Panel[] = ["configs", "running", "mainClasses"];
+export const PANELS: Panel[] = ["running", "mainClasses", "configs"];
 
 export type Action =
   | { type: "moveUp" }

@@ -29,9 +29,9 @@ describe("resolveKey navigation", () => {
   });
 
   it("focuses panels via number keys", () => {
-    expect(resolveKey("1", K(), "running")).toEqual({ type: "focusPanel", panel: "configs" });
-    expect(resolveKey("2", K(), "configs")).toEqual({ type: "focusPanel", panel: "running" });
-    expect(resolveKey("3", K(), "configs")).toEqual({ type: "focusPanel", panel: "mainClasses" });
+    expect(resolveKey("1", K(), "configs")).toEqual({ type: "focusPanel", panel: "running" });
+    expect(resolveKey("2", K(), "configs")).toEqual({ type: "focusPanel", panel: "mainClasses" });
+    expect(resolveKey("3", K(), "running")).toEqual({ type: "focusPanel", panel: "configs" });
   });
 
   it("jumps to top on g and bottom on G", () => {

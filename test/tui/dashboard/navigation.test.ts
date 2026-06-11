@@ -26,9 +26,9 @@ const emptyData: DashboardData = {
 };
 
 describe("initialNav", () => {
-  it("starts focused on configs with all selections at 0", () => {
+  it("starts focused on running with all selections at 0", () => {
     expect(initialNav).toEqual({
-      focused: "configs",
+      focused: "running",
       selected: { configs: 0, running: 0, mainClasses: 0 },
     });
   });
@@ -36,12 +36,13 @@ describe("initialNav", () => {
 
 describe("reduceNav — moveUp/moveDown", () => {
   it("moveDown increments the focused panel's selection", () => {
-    const next = reduceNav(initialNav, { type: "moveDown" }, data);
+    const nav: NavState = { ...initialNav, focused: "configs" };
+    const next = reduceNav(nav, { type: "moveDown" }, data);
     expect(next.selected.configs).toBe(1);
   });
 
   it("moveDown clamps at len-1 (configs has 3 items → max 2)", () => {
-    let nav = initialNav;
+    let nav: NavState = { ...initialNav, focused: "configs" };
     nav = reduceNav(nav, { type: "moveDown" }, data);
     nav = reduceNav(nav, { type: "moveDown" }, data);
     nav = reduceNav(nav, { type: "moveDown" }, data);
@@ -50,35 +51,37 @@ describe("reduceNav — moveUp/moveDown", () => {
   });
 
   it("moveUp clamps at 0", () => {
-    const next = reduceNav(initialNav, { type: "moveUp" }, data);
+    const nav: NavState = { ...initialNav, focused: "configs" };
+    const next = reduceNav(nav, { type: "moveUp" }, data);
     expect(next.selected.configs).toBe(0);
   });
 
   it("moveDown on an empty focused panel stays at 0", () => {
-    const next = reduceNav(initialNav, { type: "moveDown" }, emptyData);
+    const nav: NavState = { ...initialNav, focused: "configs" };
+    const next = reduceNav(nav, { type: "moveDown" }, emptyData);
     expect(next.selected.configs).toBe(0);
   });
 });
 
 describe("reduceNav — panel switching clamps (no wrap)", () => {
-  it("nextPanel: configs → running → mainClasses → mainClasses", () => {
+  it("nextPanel: running → mainClasses → configs → configs", () => {
     let nav = initialNav;
     nav = reduceNav(nav, { type: "nextPanel" }, data);
-    expect(nav.focused).toBe("running");
-    nav = reduceNav(nav, { type: "nextPanel" }, data);
     expect(nav.focused).toBe("mainClasses");
     nav = reduceNav(nav, { type: "nextPanel" }, data);
-    expect(nav.focused).toBe("mainClasses");
+    expect(nav.focused).toBe("configs");
+    nav = reduceNav(nav, { type: "nextPanel" }, data);
+    expect(nav.focused).toBe("configs");
   });
 
-  it("prevPanel: mainClasses → running → configs → configs", () => {
-    let nav: typeof initialNav = { ...initialNav, focused: "mainClasses" };
+  it("prevPanel: configs → mainClasses → running → running", () => {
+    let nav: typeof initialNav = { ...initialNav, focused: "configs" };
+    nav = reduceNav(nav, { type: "prevPanel" }, data);
+    expect(nav.focused).toBe("mainClasses");
     nav = reduceNav(nav, { type: "prevPanel" }, data);
     expect(nav.focused).toBe("running");
     nav = reduceNav(nav, { type: "prevPanel" }, data);
-    expect(nav.focused).toBe("configs");
-    nav = reduceNav(nav, { type: "prevPanel" }, data);
-    expect(nav.focused).toBe("configs");
+    expect(nav.focused).toBe("running");
   });
 });
 
@@ -91,7 +94,8 @@ describe("reduceNav — focusPanel", () => {
 
 describe("reduceNav — top/bottom", () => {
   it("top sets focused selection to 0", () => {
-    let nav = reduceNav(initialNav, { type: "moveDown" }, data);
+    let nav: NavState = { ...initialNav, focused: "configs" };
+    nav = reduceNav(nav, { type: "moveDown" }, data);
     nav = reduceNav(nav, { type: "top" }, data);
     expect(nav.selected.configs).toBe(0);
   });
@@ -109,18 +113,19 @@ describe("reduceNav — top/bottom", () => {
   });
 
   it("bottom on configs (3 items) → 2", () => {
-    const nav = reduceNav(initialNav, { type: "bottom" }, data);
+    const nav = reduceNav({ ...initialNav, focused: "configs" }, { type: "bottom" }, data);
     expect(nav.selected.configs).toBe(2);
   });
 });
 
 describe("reduceNav — per-panel selection independence", () => {
   it("keeps each panel's selection independent", () => {
-    let nav = reduceNav(initialNav, { type: "moveDown" }, data);
+    let nav: NavState = { ...initialNav, focused: "configs" };
+    nav = reduceNav(nav, { type: "moveDown" }, data);
     expect(nav.selected.configs).toBe(1);
-    nav = reduceNav(nav, { type: "nextPanel" }, data);
-    expect(nav.focused).toBe("running");
-    expect(nav.selected.running).toBe(0);
+    nav = reduceNav(nav, { type: "prevPanel" }, data);
+    expect(nav.focused).toBe("mainClasses");
+    expect(nav.selected.mainClasses).toBe(0);
     expect(nav.selected.configs).toBe(1);
   });
 });
