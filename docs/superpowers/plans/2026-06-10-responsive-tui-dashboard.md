@@ -65,7 +65,13 @@ Use a cheap `sameRunning(a,b)` = same length AND same pids in order. (Keep `clam
 
 **RF8 — T5 (already in flight):** the panel reorder breaks `Dashboard.test.tsx` interaction tests far beyond "tree shape" (every `s/S/d/e/x/w/Enter` lands on a different panel under the new focus + digit remap). T5's dispatch already folds in migrating `Dashboard.test.tsx` + `keymap.test.ts` in the same commit — confirmed required by both reviewers.
 
-**Confirmed SOUND (don't second-guess):** root `height={rows}`+`flexGrow` fills with no gap and no flicker on modern terminals; `overflow:"hidden"` + `wrap="truncate"` are real in 6.8 and truncate long lines cleanly; `process.stdout.on("resize")` works under raw mode + alt-screen; the fill recipe is Ink-6-idiomatic (omits the trailing newline at full height). The structure ships; only the line-budgeting needed the measured-height fix.
+**RF9 — T8 height budget (from the T6 adversarial CLEAR).** Measured-panel title-safety holds only while the LeftColumn parent is **≥ 9 rows** (3×`minHeight:3`) and the selected row stays visible at **≥ ~10**. So in the grid view the **bottom chrome must be ≤ 2 lines** — the `StatusBar` (1) plus at most ONE optional message line. Do NOT add a third bottom line in grid mode. Verify the wired Dashboard at `rows=12` *with an active status message* (content row = 10 → Running still shows its selection; Configs may degrade to title-only, which is acceptable). If you ever need more bottom chrome, bump the `tooSmall` threshold to `rows < 13`.
+
+**RF10 — Apply RF1 to the right pane (T7) and zoom (T10) too.** The log body must be a **measured** inner `flexGrow:1 overflow:hidden` box, with the pane title AND the `▏live · ↵ zoom` footer OUTSIDE it, so `tailLines(content, measuredBodyHeight)` fits exactly and the newest line + footer are never clipped (kill-shot #2). `TargetDetail`/`ConfigDetail` are short static fields — no measuring needed.
+
+**T6 follow-ups (cheap, fold into T7 or T11):** the tester noted 3 unpinned-but-correct cases — selected-at-end (idx 29), a 0-row panel's `(none)` branch, and the non-focused-panel no-`▶`-marker. Add the end-selection assertion at least. **Visual (T11 polish):** at very small panel heights a single content row can render over the bottom border (`╰─ com.example.A───╯`) — cosmetic, address in the polish pass.
+
+**Confirmed SOUND (don't second-guess):** root `height={rows}`+`flexGrow` fills with no gap and no flicker on modern terminals; `overflow:"hidden"` + `wrap="truncate"` are real in 6.8 and truncate long lines cleanly; `process.stdout.on("resize")` works under raw mode + alt-screen; the fill recipe is Ink-6-idiomatic (omits the trailing newline at full height); **measureElement is deterministic in ink-testing-library** (T6 proved 5/5), so the layout regression tests run in CI. The structure ships; only the line-budgeting needed the measured-height fix.
 
 ---
 
