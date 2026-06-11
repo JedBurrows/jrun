@@ -17,6 +17,9 @@ export const useLogTail = (
 ): { lines: string[]; empty: boolean } => {
   const [content, setContent] = useState<string | null>(null);
 
+  // Keyed on the mainClass/pid primitives on purpose: depending on the `target`
+  // object would restart the poll every render (callers pass a fresh object).
+  // biome-ignore lint/correctness/useExhaustiveDependencies: intentional primitive deps
   useEffect(() => {
     if (!target) {
       setContent(null);

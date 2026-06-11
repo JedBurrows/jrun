@@ -1,14 +1,17 @@
-import { render } from "ink-testing-library";
 import { Text } from "ink";
+import { render } from "ink-testing-library";
 import React from "react";
 import { afterEach, beforeEach, describe, expect, test, vi } from "vitest";
-import { useLogTail } from "../../../../src/tui/dashboard/hooks/useLogTail.js";
 import type { JrunApi } from "../../../../src/api/JrunApi.js";
+import { useLogTail } from "../../../../src/tui/dashboard/hooks/useLogTail.js";
 
 const makeApi = (text: string | null): JrunApi =>
   ({ readLogByPid: async () => text }) as unknown as JrunApi;
 
-function Probe({ api, target }: { api: JrunApi; target: { mainClass: string; pid: number } | null }) {
+function Probe({
+  api,
+  target,
+}: { api: JrunApi; target: { mainClass: string; pid: number } | null }) {
   const { lines } = useLogTail(api, target, 2, 1000);
   return <Text>{lines.join("|")}</Text>;
 }
