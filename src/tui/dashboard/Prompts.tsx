@@ -8,7 +8,9 @@ import React from "react";
 export function ConfirmPrompt({ label }: { label: string }) {
   return (
     <Box paddingX={1}>
-      <Text color="yellow">{label}</Text>
+      <Text color="yellow" wrap="truncate">
+        {label}
+      </Text>
     </Box>
   );
 }
@@ -20,7 +22,9 @@ export function ConfirmPrompt({ label }: { label: string }) {
 export function TextPrompt({ label, value }: { label: string; value: string }) {
   return (
     <Box paddingX={1}>
-      <Text color="cyan">{label} </Text>
+      <Text color="cyan" wrap="truncate">
+        {label}{" "}
+      </Text>
       <Text>{value}</Text>
       <Text>▌</Text>
     </Box>

@@ -393,7 +393,9 @@ export function Dashboard({ api, onExit }: Props) {
         <>
           {message !== null && (
             <Box paddingX={1}>
-              <Text color={isError ? "red" : "green"}>{message}</Text>
+              <Text color={isError ? "red" : "green"} wrap="truncate">
+                {message}
+              </Text>
             </Box>
           )}
           <StatusBar panel={nav.focused} message={null} />

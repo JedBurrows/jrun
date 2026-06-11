@@ -16,9 +16,13 @@ export function StatusBar({ panel, message, isError = false }: Props) {
   return (
     <Box paddingX={1}>
       {message !== null ? (
-        <Text color={isError ? "red" : "green"}>{message}</Text>
+        <Text color={isError ? "red" : "green"} wrap="truncate">
+          {message}
+        </Text>
       ) : (
-        <Text dimColor>{format(hintsFor(panel))}</Text>
+        <Text dimColor wrap="truncate">
+          {format(hintsFor(panel))}
+        </Text>
       )}
     </Box>
   );
