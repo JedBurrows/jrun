@@ -60,4 +60,54 @@ describe("RightPane", () => {
     expect(lastFrame() ?? "").toContain("Target: com.example.App");
     unmount();
   });
+
+  test("configs focus shows config detail", async () => {
+    const cfgData: DashboardData = {
+      running: [],
+      mainClasses: [],
+      configs: ["api-dev"],
+      configDetails: { "api-dev": { mainClass: "com.example.Api", programArgs: [], jvmOpts: [] } },
+    };
+    const { lastFrame, unmount } = render(
+      <Box height={10} width={64}>
+        <RightPane api={makeApi("")} data={cfgData} nav={nav("configs")} tickMs={1000} />
+      </Box>
+    );
+    await settle();
+    const f = lastFrame() ?? "";
+    expect(f).toContain("Config: api-dev");
+    expect(f).toContain("com.example.Api");
+    unmount();
+  });
+
+  test("no stale-log flash when switching running rows (key remount)", async () => {
+    const api = {
+      readLogByPid: async (_c: string, pid: number) => `LOG-FOR-${pid}`,
+    } as unknown as JrunApi;
+    const twoData: DashboardData = {
+      running: [rec(1111), rec(2222)],
+      mainClasses: [],
+      configs: [],
+      configDetails: {},
+    };
+    const navSel = (i: number): NavState => ({
+      focused: "running",
+      selected: { configs: 0, running: i, mainClasses: 0 },
+    });
+    const view = (i: number) => (
+      <Box height={10} width={64}>
+        <RightPane api={api} data={twoData} nav={navSel(i)} tickMs={1000} />
+      </Box>
+    );
+    const { lastFrame, rerender, unmount } = render(view(0));
+    await settle();
+    expect(lastFrame() ?? "").toContain("LOG-FOR-1111");
+    rerender(view(1)); // switch focused running row
+    const immediate = lastFrame() ?? ""; // BEFORE settle — the risky frame
+    expect(immediate).toContain("PID 2222"); // new title
+    expect(immediate).not.toContain("LOG-FOR-1111"); // key remount cleared the old body
+    await settle();
+    expect(lastFrame() ?? "").toContain("LOG-FOR-2222");
+    unmount();
+  });
 });

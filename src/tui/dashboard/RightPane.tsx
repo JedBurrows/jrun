@@ -127,7 +127,13 @@ function ConfigDetail({ data, nav }: Props) {
 }
 
 export function RightPane(props: Props) {
-  if (props.nav.focused === "running") return <LogTail {...props} />;
+  if (props.nav.focused === "running") {
+    // Remount on target identity so LogTail's `content` state resets
+    // synchronously — otherwise useLogTail's setContent(null) runs after paint
+    // and the new title flashes over the old log body for one frame (RF3).
+    const rec = props.data.running[props.nav.selected.running];
+    return <LogTail key={rec ? `${rec.mainClass}:${rec.pid}` : "none"} {...props} />;
+  }
   if (props.nav.focused === "mainClasses") return <TargetDetail {...props} />;
   return <ConfigDetail {...props} />;
 }
