@@ -20,7 +20,7 @@ Run `jrun --help` for all commands. Key commands:
 - `jrun save <name> <class> [args]` — save a run config
 - `jrun rerun` — repeat last run
 
-The dashboard is the interactive TUI (vim + arrow keys, `?` for help) for humans; agents drive the CLI. All query/action commands support `--json` for machine-readable output (the agent-facing contract).
+The dashboard is the interactive TUI (vim + arrow keys, `?` for help) for humans; agents drive the CLI. It fills the terminal (lazygit-style, reflows on resize) and leads with **Running** processes, then project **Targets** (runnable main classes), then saved **Configs**. The right pane follows focus: a running process **live-tails its log**; `↵` zooms that log fullscreen (`j`/`k`/`g`/`G` to scroll, `q` to exit). All query/action commands support `--json` for machine-readable output (the agent-facing contract).
 
 Must be run from a Maven project directory (where pom.xml lives). Requires `ripgrep` (`rg`) on PATH for `jrun list`.
 
