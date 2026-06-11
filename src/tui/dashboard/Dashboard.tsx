@@ -2,14 +2,17 @@ import { Box, Text, useInput } from "ink";
 import React, { useCallback, useEffect, useRef, useState } from "react";
 import type { JrunApi } from "../../api/JrunApi.js";
 import type { RunConfig } from "../../services/ConfigStore.js";
-import { DetailPane } from "./DetailPane.js";
 import { HelpOverlay } from "./HelpOverlay.js";
+import { LeftColumn } from "./LeftColumn.js";
 import { LogView } from "./LogView.js";
-import { Panels } from "./Panels.js";
 import { ConfirmPrompt, TextPrompt } from "./Prompts.js";
+import { RightPane } from "./RightPane.js";
 import { StatusBar } from "./StatusBar.js";
+import { useLogTail } from "./hooks/useLogTail.js";
+import { useTerminalSize } from "./hooks/useTerminalSize.js";
 import { type KeyFlags, resolveKey } from "./keymap.js";
 import { clampNav, initialNav, reduceNav } from "./navigation.js";
+import { sameRunning } from "./sameRunning.js";
 import type { Action, DashboardData, NavState } from "./types.js";
 
 export type DashboardIntent = { type: "quit" } | { type: "edit"; name: string };
@@ -33,7 +36,6 @@ interface Pending {
 interface LogState {
   mainClass: string;
   pid: number;
-  text: string | null;
 }
 
 const EMPTY: DashboardData = {
@@ -71,7 +73,18 @@ export function Dashboard({ api, onExit }: Props) {
   const [buffer, setBuffer] = useState("");
   const [pendingSaveClass, setPendingSaveClass] = useState<string | null>(null);
   const [log, setLog] = useState<LogState | null>(null);
+  const [logOffset, setLogOffset] = useState(0);
   const [busy, setBusy] = useState(false);
+
+  // RF5: terminal size + derived layout must be read above every early return.
+  const { columns, rows } = useTerminalSize();
+  const leftWidth = Math.max(24, Math.min(36, Math.floor(columns * 0.32)));
+  const tooSmall = columns < 60 || rows < 12;
+
+  // RF5: the zoom tail hook is called unconditionally (target null unless in
+  // logs mode) so the hook order is stable when toggling into/out of logs mode.
+  const zoomTarget = mode === "logs" && log ? { mainClass: log.mainClass, pid: log.pid } : null;
+  const zoom = useLogTail(api, zoomTarget, 5000, 1500); // big buffer for scrollback
 
   const mounted = useRef(true);
   useEffect(() => {
@@ -137,35 +150,6 @@ export function Dashboard({ api, onExit }: Props) {
     [refresh, note]
   );
 
-  const openLogs = useCallback(
-    async (mainClass: string, pid: number) => {
-      setBusy(true);
-      try {
-        const text = await api.readLogByPid(mainClass, pid);
-        if (!mounted.current) return;
-        note(null); // clear any stale error before showing the log pane
-        setLog({ mainClass, pid, text: text ?? "(no log available)" });
-        setMode("logs");
-      } catch (err) {
-        note(errMsg(err), true);
-      } finally {
-        if (mounted.current) setBusy(false);
-      }
-    },
-    [api, note]
-  );
-
-  const reloadLogs = useCallback(async () => {
-    if (!log) return;
-    try {
-      const text = await api.readLogByPid(log.mainClass, log.pid);
-      if (mounted.current)
-        setLog({ mainClass: log.mainClass, pid: log.pid, text: text ?? "(no log available)" });
-    } catch (err) {
-      note(errMsg(err), true);
-    }
-  }, [api, log, note]);
-
   // Dispatch a normal-mode action to the right JrunApi call / mode transition.
   const runAction = useCallback(
     (action: Action) => {
@@ -203,7 +187,10 @@ export function Dashboard({ api, onExit }: Props) {
           const rec = d.running[nav.selected.running];
           if (!rec) return;
           if (action.type === "primary") {
-            void openLogs(rec.mainClass, rec.pid);
+            note(null); // clear any stale error before showing the zoom pane
+            setLog({ mainClass: rec.mainClass, pid: rec.pid });
+            setLogOffset(0);
+            setMode("logs");
           } else if (action.type === "kill") {
             setPending({
               verb: "kill",
@@ -241,8 +228,33 @@ export function Dashboard({ api, onExit }: Props) {
         }
       }
     },
-    [nav, data, api, runMutation, openLogs, onExit, note]
+    [nav, data, api, runMutation, onExit, note]
   );
+
+  // RF4: poll only the running list. Deps are [api] (stable) so the interval
+  // effect below isn't recreated every tick; functional updaters read the
+  // latest state without widening deps; the equality gate skips a no-op
+  // setData (no new object, no re-render) when nothing changed.
+  const refreshRunning = useCallback(async () => {
+    const running = await api.listRunning();
+    if (!mounted.current) return;
+    setData((d) => (!d || sameRunning(d.running, running) ? d : { ...d, running }));
+    setNav((n) => {
+      const max = Math.max(0, running.length - 1);
+      return n.selected.running <= max
+        ? n
+        : { ...n, selected: { ...n.selected, running: Math.min(n.selected.running, max) } };
+    });
+  }, [api]);
+
+  useEffect(() => {
+    // Pause under modal modes so a poll can't churn the selection under a prompt.
+    if (mode === "confirm" || mode === "prompt" || mode === "help") return;
+    const id = setInterval(() => {
+      void refreshRunning().catch(() => {});
+    }, 1500);
+    return () => clearInterval(id);
+  }, [mode, refreshRunning]);
 
   useInput((input, key) => {
     if (mode === "help") {
@@ -297,8 +309,14 @@ export function Dashboard({ api, onExit }: Props) {
       if (input === "q" || key.escape) {
         setMode("normal");
         setLog(null);
-      } else if (input === "r") {
-        void reloadLogs();
+      } else if (input === "j" || key.downArrow) {
+        setLogOffset((o) => Math.max(0, o - 1)); // down, toward newest
+      } else if (input === "k" || key.upArrow) {
+        setLogOffset((o) => Math.min(o + 1, zoom.lines.length)); // up, toward oldest
+      } else if (input === "g") {
+        setLogOffset(zoom.lines.length); // top (clamped to the top page by logSlice)
+      } else if (input === "G") {
+        setLogOffset(0); // bottom / live
       }
       return;
     }
@@ -357,30 +375,44 @@ export function Dashboard({ api, onExit }: Props) {
 
   if (mode === "logs" && log) {
     return (
-      <Box flexDirection="column">
-        <LogView mainClass={log.mainClass} text={log.text} />
+      <Box flexDirection="column" width={columns} height={rows}>
+        <LogView
+          mainClass={log.mainClass}
+          pid={log.pid}
+          lines={zoom.lines}
+          offsetFromBottom={logOffset}
+        />
         <StatusBar panel={nav.focused} message={isError ? message : null} isError={isError} />
       </Box>
     );
   }
 
+  if (tooSmall) {
+    return (
+      <Box flexDirection="column" padding={1}>
+        <Text>Terminal too small — enlarge to at least 60×12.</Text>
+      </Box>
+    );
+  }
+
   return (
-    <Box flexDirection="column">
-      <Box flexDirection="row">
-        <Panels data={data} nav={nav} />
-        <DetailPane data={data} nav={nav} />
+    <Box flexDirection="column" width={columns} height={rows}>
+      <Box flexDirection="row" flexGrow={1}>
+        <LeftColumn data={data} nav={nav} width={leftWidth} />
+        <RightPane api={api} data={data} nav={nav} tickMs={1500} />
       </Box>
       {mode === "confirm" && pending ? (
         <ConfirmPrompt label={`${pending.verb} ${pending.target}? (y/N)`} />
       ) : mode === "prompt" ? (
         <TextPrompt label="Save as config name:" value={buffer} />
       ) : (
-        // Keybindings stay pinned at the bottom (lazygit-style); the transient
-        // status note rides above them rather than replacing them.
+        // Bottom chrome ≤ 2 lines (RF9): optional message line + the status bar.
         <>
           {message !== null && (
             <Box paddingX={1}>
-              <Text color={isError ? "red" : "green"}>{message}</Text>
+              <Text color={isError ? "red" : "green"} wrap="truncate">
+                {message}
+              </Text>
             </Box>
           )}
           <StatusBar panel={nav.focused} message={null} />

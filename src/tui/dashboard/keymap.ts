@@ -33,9 +33,9 @@ export const resolveKey = (input: string, key: KeyFlags, panel: Panel): Action |
   if (key.upArrow || input === "k") return { type: "moveUp" };
   if (key.rightArrow || (key.tab && !key.shift) || input === "l") return { type: "nextPanel" };
   if (key.leftArrow || (key.tab && key.shift) || input === "h") return { type: "prevPanel" };
-  if (input === "1") return { type: "focusPanel", panel: "configs" };
-  if (input === "2") return { type: "focusPanel", panel: "running" };
-  if (input === "3") return { type: "focusPanel", panel: "mainClasses" };
+  if (input === "1") return { type: "focusPanel", panel: "running" };
+  if (input === "2") return { type: "focusPanel", panel: "mainClasses" };
+  if (input === "3") return { type: "focusPanel", panel: "configs" };
   if (input === "g") return { type: "top" };
   if (input === "G") return { type: "bottom" };
   if (input === "r") return { type: "refresh" };

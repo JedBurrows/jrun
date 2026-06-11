@@ -2,7 +2,7 @@ import type { Action, DashboardData, NavState, Panel } from "./types.js";
 import { PANELS } from "./types.js";
 
 export const initialNav: NavState = {
-  focused: "configs",
+  focused: "running",
   selected: { configs: 0, running: 0, mainClasses: 0 },
 };
 

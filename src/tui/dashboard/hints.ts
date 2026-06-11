@@ -23,7 +23,7 @@ export const PANEL_HINTS: Record<Panel, readonly Hint[]> = {
     { keys: "d", label: "delete" },
   ],
   running: [
-    { keys: "⏎", label: "logs" },
+    { keys: "⏎", label: "zoom log" },
     { keys: "x", label: "kill" },
   ],
   mainClasses: [

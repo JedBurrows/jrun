@@ -1,12 +1,16 @@
-import { render } from "ink-testing-library";
+import { cleanup, render } from "ink-testing-library";
 import React from "react";
-import { describe, expect, it, vi } from "vitest";
+import { afterEach, describe, expect, it, vi } from "vitest";
 import type { JrunApi } from "../../../src/api/JrunApi.js";
 import { Dashboard } from "../../../src/tui/dashboard/Dashboard.js";
 
+// Drain microtasks (async data load) then give the measure→re-render cycles a
+// few macrotask boundaries to settle: the measured panels (useElementHeight)
+// re-render once after their first measurement before the row windowing is final.
 const flush = async () => {
-  for (let i = 0; i < 5; i++) await Promise.resolve();
-  await new Promise((r) => setTimeout(r, 20));
+  for (let i = 0; i < 8; i++) await Promise.resolve();
+  await new Promise((r) => setTimeout(r, 40));
+  await new Promise((r) => setTimeout(r, 40));
 };
 
 const RECORD = {
@@ -73,13 +77,18 @@ const mockApi = (overrides: Partial<Record<keyof JrunApi, unknown>> = {}) => {
 };
 
 describe("Dashboard", () => {
+  // RF6: unmount every rendered instance so the live log-tail interval can't leak.
+  afterEach(() => {
+    cleanup();
+  });
+
   it("renders panels with loaded data", async () => {
     const { lastFrame } = render(<Dashboard api={stubApi()} onExit={() => {}} />);
     await flush();
     const frame = lastFrame() ?? "";
     expect(frame).toContain("Configs");
     expect(frame).toContain("Running");
-    expect(frame).toContain("Main classes");
+    expect(frame).toContain("Targets"); // mainClasses panel title (was "Main classes")
     expect(frame).toContain("alpha"); // config name
     expect(frame).toContain("com.x.Server"); // running process
     expect(frame).toContain("com.x.B"); // main class
@@ -162,6 +171,8 @@ describe("Dashboard", () => {
     const api = mockApi();
     const { stdin } = render(<Dashboard api={api} onExit={() => {}} />);
     await flush();
+    stdin.write("3"); // focus configs
+    await flush();
     const callsBefore = api.listConfigs.mock.calls.length;
     stdin.write("s");
     await flush();
@@ -172,6 +183,8 @@ describe("Dashboard", () => {
   it("starts a config in debug on S", async () => {
     const api = mockApi();
     const { stdin } = render(<Dashboard api={api} onExit={() => {}} />);
+    await flush();
+    stdin.write("3"); // focus configs
     await flush();
     stdin.write("S");
     await flush();
@@ -185,6 +198,8 @@ describe("Dashboard", () => {
     const api = mockApi();
     const { stdin } = render(<Dashboard api={api} onExit={() => {}} />);
     await flush();
+    stdin.write("3"); // focus configs
+    await flush();
     stdin.write("d");
     await flush();
     stdin.write("y");
@@ -195,6 +210,8 @@ describe("Dashboard", () => {
   it("does not delete a config when cancelling with n", async () => {
     const api = mockApi();
     const { stdin } = render(<Dashboard api={api} onExit={() => {}} />);
+    await flush();
+    stdin.write("3"); // focus configs
     await flush();
     stdin.write("d");
     await flush();
@@ -208,6 +225,8 @@ describe("Dashboard", () => {
     const onExit = vi.fn();
     const { stdin } = render(<Dashboard api={api} onExit={onExit} />);
     await flush();
+    stdin.write("3"); // focus configs
+    await flush();
     stdin.write("e");
     await flush();
     expect(onExit).toHaveBeenCalledWith({ type: "edit", name: "alpha" });
@@ -217,7 +236,7 @@ describe("Dashboard", () => {
     const api = mockApi();
     const { stdin } = render(<Dashboard api={api} onExit={() => {}} />);
     await flush();
-    stdin.write("2"); // focus running
+    stdin.write("1"); // focus running
     await flush();
     stdin.write("x");
     await flush();
@@ -230,23 +249,26 @@ describe("Dashboard", () => {
     const api = mockApi();
     const { stdin, lastFrame } = render(<Dashboard api={api} onExit={() => {}} />);
     await flush();
-    stdin.write("2"); // focus running
+    stdin.write("1"); // focus running
     await flush();
     stdin.write("\r"); // Enter
     await flush();
     expect(api.readLogByPid).toHaveBeenCalledWith("com.x.Server", 4321);
     expect(lastFrame() ?? "").toContain("Logs: com.x.Server");
     expect(lastFrame() ?? "").toContain("log output");
+    // The fullscreen LogView's footer is unique to it (the normal-mode side
+    // LogTail pane also shows a "Logs: …" header, so discriminate on the footer).
+    expect(lastFrame() ?? "").toContain("q/Esc close");
     stdin.write("q");
     await flush();
-    expect(lastFrame() ?? "").not.toContain("Logs: com.x.Server");
+    expect(lastFrame() ?? "").not.toContain("q/Esc close"); // fullscreen view closed
   });
 
   it("saves a main class as a config via the prompt", async () => {
     const api = mockApi();
     const { stdin } = render(<Dashboard api={api} onExit={() => {}} />);
     await flush();
-    stdin.write("3"); // focus mainClasses
+    stdin.write("2"); // focus mainClasses
     await flush();
     stdin.write("w");
     await flush();
@@ -266,7 +288,7 @@ describe("Dashboard", () => {
     const onExit = vi.fn();
     const { stdin } = render(<Dashboard api={api} onExit={onExit} />);
     await flush();
-    stdin.write("3"); // focus mainClasses
+    stdin.write("2"); // focus mainClasses
     await flush();
     stdin.write("w");
     await flush();
@@ -294,6 +316,8 @@ describe("Dashboard", () => {
     const api = mockApi({ listConfigs, loadConfig });
     const { stdin, lastFrame } = render(<Dashboard api={api} onExit={() => {}} />);
     await flush();
+    stdin.write("3"); // focus configs
+    await flush();
     stdin.write("G"); // jump to the last config (index 2 = "c")
     await flush();
     expect(lastFrame() ?? "").toContain("mainClass: com.x.c");
@@ -313,6 +337,8 @@ describe("Dashboard", () => {
     const api = mockApi();
     const { stdin, lastFrame } = render(<Dashboard api={api} onExit={() => {}} />);
     await flush();
+    stdin.write("3"); // focus configs
+    await flush();
     stdin.write("s"); // start alpha -> sets "Started alpha" status
     await flush();
     const frame = lastFrame() ?? "";
@@ -324,6 +350,8 @@ describe("Dashboard", () => {
   it("surfaces an error from a failed action", async () => {
     const api = mockApi({ start: vi.fn().mockRejectedValue(new Error("boom")) });
     const { stdin, lastFrame } = render(<Dashboard api={api} onExit={() => {}} />);
+    await flush();
+    stdin.write("3"); // focus configs
     await flush();
     stdin.write("s");
     await flush();
