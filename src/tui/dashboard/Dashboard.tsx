@@ -2,12 +2,13 @@ import { Box, Text, useInput } from "ink";
 import React, { useCallback, useEffect, useRef, useState } from "react";
 import type { JrunApi } from "../../api/JrunApi.js";
 import type { RunConfig } from "../../services/ConfigStore.js";
-import { DetailPane } from "./DetailPane.js";
 import { HelpOverlay } from "./HelpOverlay.js";
+import { LeftColumn } from "./LeftColumn.js";
 import { LogView } from "./LogView.js";
-import { Panels } from "./Panels.js";
 import { ConfirmPrompt, TextPrompt } from "./Prompts.js";
+import { RightPane } from "./RightPane.js";
 import { StatusBar } from "./StatusBar.js";
+import { useTerminalSize } from "./hooks/useTerminalSize.js";
 import { type KeyFlags, resolveKey } from "./keymap.js";
 import { clampNav, initialNav, reduceNav } from "./navigation.js";
 import type { Action, DashboardData, NavState } from "./types.js";
@@ -72,6 +73,11 @@ export function Dashboard({ api, onExit }: Props) {
   const [pendingSaveClass, setPendingSaveClass] = useState<string | null>(null);
   const [log, setLog] = useState<LogState | null>(null);
   const [busy, setBusy] = useState(false);
+
+  // RF5: terminal size + derived layout must be read above every early return.
+  const { columns, rows } = useTerminalSize();
+  const leftWidth = Math.max(24, Math.min(36, Math.floor(columns * 0.32)));
+  const tooSmall = columns < 60 || rows < 12;
 
   const mounted = useRef(true);
   useEffect(() => {
@@ -364,19 +370,26 @@ export function Dashboard({ api, onExit }: Props) {
     );
   }
 
+  if (tooSmall) {
+    return (
+      <Box flexDirection="column" padding={1}>
+        <Text>Terminal too small — enlarge to at least 60×12.</Text>
+      </Box>
+    );
+  }
+
   return (
-    <Box flexDirection="column">
-      <Box flexDirection="row">
-        <Panels data={data} nav={nav} />
-        <DetailPane data={data} nav={nav} />
+    <Box flexDirection="column" width={columns} height={rows}>
+      <Box flexDirection="row" flexGrow={1}>
+        <LeftColumn data={data} nav={nav} width={leftWidth} />
+        <RightPane api={api} data={data} nav={nav} tickMs={1500} />
       </Box>
       {mode === "confirm" && pending ? (
         <ConfirmPrompt label={`${pending.verb} ${pending.target}? (y/N)`} />
       ) : mode === "prompt" ? (
         <TextPrompt label="Save as config name:" value={buffer} />
       ) : (
-        // Keybindings stay pinned at the bottom (lazygit-style); the transient
-        // status note rides above them rather than replacing them.
+        // Bottom chrome ≤ 2 lines (RF9): optional message line + the status bar.
         <>
           {message !== null && (
             <Box paddingX={1}>

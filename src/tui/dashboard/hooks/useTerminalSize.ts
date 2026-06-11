@@ -1,3 +1,4 @@
+import { useStdout } from "ink";
 import { useEffect, useState } from "react";
 
 export interface TerminalSize {
@@ -11,15 +12,18 @@ export const readSize = (stdout: NodeJS.WriteStream | undefined): TerminalSize =
   rows: stdout?.rows ?? 24,
 });
 
-/** Terminal size, updating on SIGWINCH ("resize"). */
+/** Terminal size, updating on SIGWINCH ("resize"). Reads Ink's stdout so tests
+ *  see the renderer's deterministic dimensions instead of the real process. */
 export const useTerminalSize = (): TerminalSize => {
-  const [size, setSize] = useState<TerminalSize>(() => readSize(process.stdout));
+  const { stdout } = useStdout();
+  const [size, setSize] = useState<TerminalSize>(() => readSize(stdout));
   useEffect(() => {
-    const onResize = () => setSize(readSize(process.stdout));
-    process.stdout.on("resize", onResize);
+    if (!stdout) return;
+    const onResize = () => setSize(readSize(stdout));
+    stdout.on("resize", onResize);
     return () => {
-      process.stdout.off("resize", onResize);
+      stdout.off("resize", onResize);
     };
-  }, []);
+  }, [stdout]);
   return size;
 };
