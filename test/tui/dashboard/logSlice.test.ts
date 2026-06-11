@@ -8,8 +8,14 @@ describe("logSlice", () => {
   test("offset scrolls the window up", () => {
     expect(logSlice(100, 10, 5)).toEqual({ start: 85, end: 95 });
   });
-  test("offset clamps at the top", () => {
-    expect(logSlice(100, 10, 1000)).toEqual({ start: 0, end: 0 });
+  test("over-scroll up clamps to the TOP page, not empty", () => {
+    expect(logSlice(100, 10, 1000)).toEqual({ start: 0, end: 10 });
+  });
+  test("g (offset = count) shows the top page", () => {
+    expect(logSlice(100, 20, 100)).toEqual({ start: 0, end: 20 });
+  });
+  test("short log: g shows all lines", () => {
+    expect(logSlice(3, 10, 3)).toEqual({ start: 0, end: 3 });
   });
   test("fewer lines than view → all", () => {
     expect(logSlice(3, 10, 0)).toEqual({ start: 0, end: 3 });

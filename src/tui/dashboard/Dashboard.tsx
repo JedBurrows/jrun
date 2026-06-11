@@ -310,11 +310,11 @@ export function Dashboard({ api, onExit }: Props) {
         setMode("normal");
         setLog(null);
       } else if (input === "j" || key.downArrow) {
-        setLogOffset((o) => o + 1);
+        setLogOffset((o) => Math.max(0, o - 1)); // down, toward newest
       } else if (input === "k" || key.upArrow) {
-        setLogOffset((o) => Math.max(0, o - 1));
+        setLogOffset((o) => Math.min(o + 1, zoom.lines.length)); // up, toward oldest
       } else if (input === "g") {
-        setLogOffset(zoom.lines.length); // top (clamped by logSlice)
+        setLogOffset(zoom.lines.length); // top (clamped to the top page by logSlice)
       } else if (input === "G") {
         setLogOffset(0); // bottom / live
       }
