@@ -16,6 +16,61 @@
 
 ---
 
+## ⚠️ Review Fixes (post architect + devil's-advocate, verified vs ink@6.8.0) — READ FIRST, these OVERRIDE the task bodies below
+
+The reviewers proved (scratch Yoga experiments) that **arithmetic line-budgets diverge from Yoga and `overflow:"hidden"` GARBLES an over-tall box rather than clipping it** — so estimating row counts clobbers the Running title / drops the selected row / drops un-scrollable log lines. The fixes:
+
+**RF1 — `measureElement`, do NOT estimate heights (replaces T6/T7/T10 arithmetic).** Add a tiny hook and use it everywhere a list/log is fit to a pane:
+```ts
+// src/tui/dashboard/hooks/useElementHeight.ts
+import { measureElement, type DOMElement } from "ink";
+import { type RefObject, useEffect, useState } from "react";
+/** Measured inner height (rows) of a ref'd Ink <Box>. Re-measures every render
+ *  (cheap) so it tracks terminal resizes; React bails when the number is stable. */
+export const useElementHeight = (ref: RefObject<DOMElement | null>): number => {
+  const [h, setH] = useState(0);
+  useEffect(() => {
+    if (ref.current) setH(measureElement(ref.current).height);
+  });
+  return h;
+};
+```
+Pattern: give each panel/log area an **inner `<Box ref={ref} flexGrow={1} flexDirection="column" overflow="hidden">`** that fills the space under the title; measure ITS height `h`; then `windowRows(rows.length, selected, h)` (LeftColumn) or `tailLines(content, h)` (RightPane/LogView). The measured height already excludes border+title, so feed it raw (no `-N`). First frame renders `h=0` (empty) then settles next frame — acceptable. This deletes the `cap()`/`logLines`/`view=height-N` math entirely.
+
+**RF2 — `useTerminalSize` must read Ink's `useStdout()`, not global `process.stdout`** (test determinism; a narrow dev terminal under `pnpm test` would otherwise flip the `tooSmall` fallback and fail Dashboard tests). Update T3's hook:
+```ts
+import { useStdout } from "ink";
+// inside useTerminalSize: const { stdout } = useStdout(); read/subscribe on THAT stdout.
+```
+`readSize` stays pure and tested. (T3 is already committed with `process.stdout` — amend it as part of T8 when it's first consumed, or a tiny follow-up commit.)
+
+**RF3 — `useLogTail` (T4): `setContent(null)` at the top of the effect when the target changes** (avoid a 1-frame stale-log flash on focus switch). Tests: assert only the **initial** poll under `vi.useFakeTimers()` (the plan's 2 tests are fine); do NOT add a later-tick assertion under fake timers — Ink throttles renders behind a real `setTimeout` that fake timers freeze, so it would stay stale. If you must test a later tick, use real timers.
+
+**RF4 — Poll plumbing (T9): `refreshRunning` deps `[api]` only; merge+clamp inside functional `setData`/`setNav` updaters; skip the update when `running` is unchanged** (avoid minting a new object + recreating the interval every 1.5s):
+```ts
+const refreshRunning = useCallback(async () => {
+  const running = await api.listRunning();
+  if (!mounted.current) return;
+  setData((d) => (d && sameRunning(d.running, running) ? d : d ? { ...d, running } : d));
+  setNav((n) => clampNav(n, { configs: [], mainClasses: [], configDetails: {}, ...(/* current */ {}), running } as any));
+}, [api]);
+```
+Use a cheap `sameRunning(a,b)` = same length AND same pids in order. (Keep `clampNav` against the latest data via a functional `setNav` that reads the merged running — simplest is to clamp inside the same `setData` updater and mirror into nav, or store running length in a ref.) Interval effect deps `[mode]` only.
+
+**RF5 — Rules of Hooks (T8/T10):** `useTerminalSize`, `useElementHeight`, and the zoom `useLogTail` must be called **above every early return** (`data===null` / `help` / `logs` / `tooSmall`), and `contentRows`/sizes derived before use. The zoom `useLogTail` is always called with a `target` that is non-null only in logs mode.
+
+**RF6 — Tests leak intervals (T9):** existing Dashboard tests do not `.unmount()`. Add `afterEach(() => instance?.unmount())` (or unmount each render) so the 1.5s interval and listeners don't leak / fire setState-after-unmount.
+
+**RF7 — Zoom of a just-exited process (T10):** the zoom uses `readLogByPid(class, pid)` from the stored target; the log file persists post-exit (named `<hash>-<class>-…-<pid>.log`), so it still resolves — verify in the T11 run. (No need for `readLogByPidAnyClass` here since we still know the class from the row we zoomed from.)
+
+**RF8 — T5 (already in flight):** the panel reorder breaks `Dashboard.test.tsx` interaction tests far beyond "tree shape" (every `s/S/d/e/x/w/Enter` lands on a different panel under the new focus + digit remap). T5's dispatch already folds in migrating `Dashboard.test.tsx` + `keymap.test.ts` in the same commit — confirmed required by both reviewers.
+
+**Confirmed SOUND (don't second-guess):** root `height={rows}`+`flexGrow` fills with no gap and no flicker on modern terminals; `overflow:"hidden"` + `wrap="truncate"` are real in 6.8 and truncate long lines cleanly; `process.stdout.on("resize")` works under raw mode + alt-screen; the fill recipe is Ink-6-idiomatic (omits the trailing newline at full height). The structure ships; only the line-budgeting needed the measured-height fix.
+
+---
+
+---
+
 ## File Structure
 
 **New files:**
