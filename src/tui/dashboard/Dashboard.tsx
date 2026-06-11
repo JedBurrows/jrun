@@ -11,6 +11,7 @@ import { StatusBar } from "./StatusBar.js";
 import { useTerminalSize } from "./hooks/useTerminalSize.js";
 import { type KeyFlags, resolveKey } from "./keymap.js";
 import { clampNav, initialNav, reduceNav } from "./navigation.js";
+import { sameRunning } from "./sameRunning.js";
 import type { Action, DashboardData, NavState } from "./types.js";
 
 export type DashboardIntent = { type: "quit" } | { type: "edit"; name: string };
@@ -249,6 +250,31 @@ export function Dashboard({ api, onExit }: Props) {
     },
     [nav, data, api, runMutation, openLogs, onExit, note]
   );
+
+  // RF4: poll only the running list. Deps are [api] (stable) so the interval
+  // effect below isn't recreated every tick; functional updaters read the
+  // latest state without widening deps; the equality gate skips a no-op
+  // setData (no new object, no re-render) when nothing changed.
+  const refreshRunning = useCallback(async () => {
+    const running = await api.listRunning();
+    if (!mounted.current) return;
+    setData((d) => (!d || sameRunning(d.running, running) ? d : { ...d, running }));
+    setNav((n) => {
+      const max = Math.max(0, running.length - 1);
+      return n.selected.running <= max
+        ? n
+        : { ...n, selected: { ...n.selected, running: Math.min(n.selected.running, max) } };
+    });
+  }, [api]);
+
+  useEffect(() => {
+    // Pause under modal modes so a poll can't churn the selection under a prompt.
+    if (mode === "confirm" || mode === "prompt" || mode === "help") return;
+    const id = setInterval(() => {
+      void refreshRunning().catch(() => {});
+    }, 1500);
+    return () => clearInterval(id);
+  }, [mode, refreshRunning]);
 
   useInput((input, key) => {
     if (mode === "help") {
